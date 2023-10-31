@@ -37,6 +37,8 @@ TaskSultan identifies AoRs and projects based on their nomenclature in TaskWarri
       All the inbox tasks (the tag +in) sorted by entry time.
   #### (o) Overdue
       Overdue tasks sorted by due time.
+  #### (rr) Recurring tasks status - command line argument only
+      A table is displayed with the status of the recurring tasks from the last seven days. It is useful for habit overview.
  ### Clear data - this option is going to clear only the metadata stored in the json file, not the TaskWarrior database.
       
       
