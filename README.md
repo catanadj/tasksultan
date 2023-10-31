@@ -8,9 +8,9 @@ TaskSultan has been crafted to enhance the management of 'Areas of Responsibilit
 ### Functionality:
 Upon execution, TaskSultan generates a JSON file in its directory detailing every AoR and Project within TaskWarrior.
 
-    Projects: Each project can be enriched with metadata such as worklogs, annotations, descriptions, and outcomes.
+Projects: Each project can be enriched with metadata such as worklogs, annotations, descriptions, and outcomes.
 
-    AoRs: Unlike projects which culminate in outcomes, AoRs maintain standards. While a project like "Buy Car X" targets owning the car as its outcome, once achieved, the car transitions to an AoR where standards like maintenance, revision dates, and care are tracked.
+AoRs: Unlike projects which culminate in outcomes, AoRs maintain standards. While a project like "Buy Car X" targets owning the car as its outcome, once achieved, the car transitions to an AoR where standards like maintenance, revision dates, and care are tracked.
 
 ### Technical Details:
 TaskSultan identifies AoRs and projects based on their nomenclature in TaskWarrior. AoRs are prefixed with 'AoR' (e.g., AoR.cars.carX). TaskSultan then differentiates and categorizes them, offering customized outcome/standard fields, visual distinctions via color-coding, and menu separation.
