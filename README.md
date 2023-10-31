@@ -1,21 +1,42 @@
-# Work in progress
-## tasksultan
-TaskSultan - a bundle of utilities for TaskWarrior
+# TaskSultan
 
-This bundle of utilities is mainly created to augment the management of areas of responsability and projects in TaskWarrior but also contains some auxililiary reports.
+## An Enhanced Utility Suite for TaskWarrior
 
-The script is creating a json file in the folder where it is located that contains information about each individual AoR (Area of Responsability) and Project in the taskwarrior database.
+### Overview:
+TaskSultan has been crafted to enhance the management of 'Areas of Responsibility' (AoRs) and projects within TaskWarrior. It not only offers auxiliary reports but streamlines tasks associated with AoRs and projects.
 
-Each Project could have added to each their own metadata like worklogs, annotations, description and outcome. Each AoR could have its own custom standard instead of outcome like a project.
+### Functionality:
+Upon execution, TaskSultan generates a JSON file in its directory detailing every AoR and Project within TaskWarrior.
 
-Each task of a project is targeted to the achievement of the outcome but an "AoR" does not have an outcome per se but a standard that needs to be maintained. For example project "Buy car X", 
-each task from this project is alligned with the outcome of getting ownereship of the car but once this has been achieved and the project is completed then the car becomes an "AoR" where
-you need to maintain a certain standard like proper maintenace and care, important dates for revision that you need to hold track of etc.
+    Projects: Each project can be enriched with metadata such as worklogs, annotations, descriptions, and outcomes.
 
-Technically, the way I'm holding track of both Projects and AoR is that in TaskWarrior each area of responsability starts with AoR (example: AoR.cars.carX) and then TaskSultan is distinguishing between them
-and keeps them like two different kinds, not only in offering its custom outcome/standard field for each respectively but also in different colors and separation in the menu.
+    AoRs: Unlike projects which culminate in outcomes, AoRs maintain standards. While a project like "Buy Car X" targets owning the car as its outcome, once achieved, the car transitions to an AoR where standards like maintenance, revision dates, and care are tracked.
 
-#### Install and use
-To install clone 
+### Technical Details:
+TaskSultan identifies AoRs and projects based on their nomenclature in TaskWarrior. AoRs are prefixed with 'AoR' (e.g., AoR.cars.carX). TaskSultan then differentiates and categorizes them, offering customized outcome/standard fields, visual distinctions via color-coding, and menu separation.
 
+### Getting Started:
+    Clone the repository.
+    Execute the script for an interactive menu or use menu shortcuts as command-line arguments.
 
+### Detailed information about each of the reports
+  #### (sp) Search project
+      Using this report you can search for project/AoRs with fuzzy name completion. Once an item has been selected, a detailed view is going to be displayed including a tree structure of that individual item and options to search another/update/handle tasks or exit.
+  #### (b) Basic summary
+      This is going to display a tree of the AoRs/Projects that you have with only a minimum of information - only the tags of each and count of the tasks for each tag of the item.
+  #### (d) Detailed summary
+      This builds on the basic report, the most relavant task for each tag is shown.
+  #### (a) All-inclusive 
+      This will display in tree form all the items with each task of each tag.
+**Auxiliary reports**:
+  #### (tl) Task list
+      Will display a list of task sorted by due date up to 20 years.
+  #### (td) Daily tasks
+      A report that is displaying tasks due yesterday, today and tomorrow.
+  #### (i) Inbox tasks
+      All the inbox tasks (the tag +in) sorted by entry time.
+  #### (o) Overdue
+      Overdue tasks sorted by due time.
+ ### Clear data - this option is going to clear only the metadata stored in the json file, not the TaskWarrior database.
+      
+      
