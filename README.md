@@ -38,8 +38,8 @@ This will display in tree form all the items with each task of each tag.
   All the inbox tasks (the tag +in) sorted by entry time.
   #### (o) Overdue
   Overdue tasks sorted by due time.
-  #### (rr) Recurring tasks status - command line argument only
-  A table is displayed with the status of the recurring tasks from the last seven days. It is useful for habit overview.
- ### Clear data - this option is going to clear only the metadata stored in the json file, not the TaskWarrior database.
+  #### (rr) Recurring tasks status - command line argument option only
+  A table is displayed with the status of the recurring tasks from the last seven days. It is useful for habit tracking overview.
+ #### Clear data - this option is going to clear only the metadata stored in the json file, not the TaskWarrior database.
       
       
