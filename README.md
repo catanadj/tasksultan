@@ -28,6 +28,7 @@ This is going to display a tree of the AoRs/Projects that you have with only a m
 This builds on the basic report, the most relavant task for each tag is shown.
   #### (a) All-inclusive 
 This will display in tree form all the items with each task of each tag.
+
 **Auxiliary reports**:
   #### (tl) Task list
   Will display a list of task sorted by due date up to 20 years.
