@@ -21,24 +21,24 @@ TaskSultan identifies AoRs and projects based on their nomenclature in TaskWarri
 
 ### Detailed information about each of the reports
   #### (sp) Search project
-      Using this report you can search for project/AoRs with fuzzy name completion. Once an item has been selected, a detailed view is going to be displayed including a tree structure of that individual item and options to search another/update/handle tasks or exit.
+Using this report you can search for project/AoRs with fuzzy name completion. Once an item has been selected, a detailed view is going to be displayed including a tree structure of that individual item and options to search another/update/handle tasks or exit.
   #### (b) Basic summary
-      This is going to display a tree of the AoRs/Projects that you have with only a minimum of information - only the tags of each and count of the tasks for each tag of the item.
+This is going to display a tree of the AoRs/Projects that you have with only a minimum of information - only the tags of each and count of the tasks for each tag of the item.
   #### (d) Detailed summary
-      This builds on the basic report, the most relavant task for each tag is shown.
+This builds on the basic report, the most relavant task for each tag is shown.
   #### (a) All-inclusive 
-      This will display in tree form all the items with each task of each tag.
+This will display in tree form all the items with each task of each tag.
 **Auxiliary reports**:
   #### (tl) Task list
-      Will display a list of task sorted by due date up to 20 years.
+  Will display a list of task sorted by due date up to 20 years.
   #### (td) Daily tasks
-      A report that is displaying tasks due yesterday, today and tomorrow.
+  A report that is displaying tasks due yesterday, today and tomorrow.
   #### (i) Inbox tasks
-      All the inbox tasks (the tag +in) sorted by entry time.
+  All the inbox tasks (the tag +in) sorted by entry time.
   #### (o) Overdue
-      Overdue tasks sorted by due time.
+  Overdue tasks sorted by due time.
   #### (rr) Recurring tasks status - command line argument only
-      A table is displayed with the status of the recurring tasks from the last seven days. It is useful for habit overview.
+  A table is displayed with the status of the recurring tasks from the last seven days. It is useful for habit overview.
  ### Clear data - this option is going to clear only the metadata stored in the json file, not the TaskWarrior database.
       
       
