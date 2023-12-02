@@ -1,5 +1,8 @@
 # TaskSultan
 
+![TaskSultan](https://github.com/catanadj/tasksultan/assets/92119322/b69ecc84-8685-41e9-9374-167758032816)
+
+
 ## An Enhanced Utility Suite for TaskWarrior
 
 ### Overview:
