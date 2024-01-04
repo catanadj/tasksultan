@@ -855,7 +855,7 @@ try:
 				for tag in tags:
 					project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations])
 			else:
-				project_data[project]["NTT"].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations])
+				project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations])
 
 		tree = Tree("Saikou", style="green bold")
 
@@ -1546,7 +1546,7 @@ try:
 						time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
 						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
 				else:
-					project_data[project]["nTT"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
 			else:
 				# For tasks without a project, we will put them under "No Project" key
 				if tags:
@@ -1617,7 +1617,7 @@ try:
 				else:
 					time_remaining = due_date - now if due_date else None
 					time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
-					project_data[project]["NTT"] = [f"{task_id} {description}", due_date_str, time_remaining_str]
+					project_data[project]["No Tag"] = [f"{task_id} {description}", due_date_str, time_remaining_str]
 
 			else:
 				# For tasks without a project, we will put them under "No Project" key
@@ -1713,7 +1713,7 @@ try:
 					for tag in tags:
 						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
 				else:
-					project_data[project]["NTT"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
 			elif tags:
 				for tag in tags:
 					no_project_data[tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
