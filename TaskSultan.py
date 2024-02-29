@@ -132,7 +132,7 @@ try:
 		# Display overdue tasks
 		if overdue_tasks:
 			for task in overdue_tasks:
-				task_id = colored(f"{task['id']}", 'red')
+				task_id = colored(f"{task['id']}", 'yellow')
 				description = colored(task['description'], 'cyan')
 				tag = colored(','.join(task.get('tags', [])), 'red', attrs=['bold'])  # Join tags with comma
 				project = colored(task.get('project', ''), 'blue', attrs=['bold'])
@@ -464,7 +464,7 @@ try:
 			if tasks:
 				print(colored(name, 'yellow', attrs=['bold']))
 				for task in tasks:
-					task_id = colored(f"[{task['id']}]", 'red')
+					task_id = colored(f"[{task['id']}]", 'yellow')
 					description = colored(task['description'], 'cyan')
 					tag = colored(','.join(task.get('tags', [])), 'red', attrs=['bold'])  # Join tags with comma
 					project = colored(task.get('project', ''), 'blue', attrs=['bold'])
@@ -603,7 +603,7 @@ try:
 							due_date = datetime.strptime(task['due'], '%Y%m%dT%H%M%SZ')
 							time_remaining = due_date - datetime.now()
 							time_remaining = str(time_remaining).split('.')[0]
-						print(f"\t{Fore.RED}{task_id}{Fore.RESET}, {Fore.CYAN}{task_description}{Fore.RESET} {time_remaining}")
+						print(f"\t{Fore.YELLOW}{task_id}{Fore.RESET}, {Fore.CYAN}{task_description}{Fore.RESET} {time_remaining}")
 					elif not task_tags and (task_project == item['name'] or task_project.startswith("AoR." + item['name'])):
 						if task not in no_tag_tasks:  # Add tasks without tags to the list only if not already included
 							no_tag_tasks.append(task)
