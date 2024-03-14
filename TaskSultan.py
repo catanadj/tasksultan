@@ -1707,18 +1707,19 @@ try:
 			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
 			time_remaining = due_date - now if due_date else None
 			time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+			priority = task.get('priority', '')
 
 			if project:
 				if tags:
 					for tag in tags:
-						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str,priority])
 				else:
-					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str,priority])
 			elif tags:
 				for tag in tags:
-					no_project_data[tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+					no_project_data[tag].append([f"{task_id} {description}", due_date_str, time_remaining_str,priority])
 			else:
-				no_project_no_tag_data.append([f"{task_id} {description}", due_date_str, time_remaining_str])
+				no_project_no_tag_data.append([f"{task_id} {description}", due_date_str, time_remaining_str,priority])
 
 		tree = Tree("Saikou", style="green bold")
 
@@ -1743,6 +1744,7 @@ try:
 					task_data = data[0]
 					task_id, description = (task_data.split(" ", 1) + [""])[:2]
 					due_date = data[1] if len(data) > 1 else None
+					priority = data[3] if len(data) > 3 else 'No Priority'
 					try:
 						due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
 					except ValueError:
@@ -1750,7 +1752,13 @@ try:
 
 					time_remaining = data[2] if len(data) > 2 else None
 
-					tag_branch.add(f"[red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
+					color_pri = ""
+					if priority == "H" :
+						color_pri = "red"
+					else:
+						color_pri = "white"
+
+					tag_branch.add(f"[yellow bold]{priority}[/yellow bold] [red bold]{task_id}[/red bold] [{color_pri}]{description}[/{color_pri}] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
 
 		# Handle "No Project" tasks
 		no_project_branch = tree.add("No Project", style="red bold")
@@ -1762,6 +1770,7 @@ try:
 				task_data = data[0]
 				task_id, description = (task_data.split(" ", 1) + [""])[:2]
 				due_date = data[1] if len(data) > 1 else None
+				priority = data[3] if len(data) > 3 else 'No Priority'
 				try:
 					due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
 				except ValueError:
@@ -1769,7 +1778,7 @@ try:
 
 				time_remaining = data[2] if len(data) > 2 else None
 
-				tag_branch.add(f"[red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
+				tag_branch.add(f"[yellow bold]{priority}[/yellow bold] [red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold] ")
 
 		# Handle "No Project, No Tag" tasks
 		no_project_no_tag_branch = tree.add("No Project, No Tag", style="red bold")
@@ -1778,6 +1787,7 @@ try:
 			task_data = data[0]
 			task_id, description = (task_data.split(" ", 1) + [""])[:2]
 			due_date = data[1] if len(data) > 1 else None
+			priority = data[3] if len(data) > 3 else 'No Priority'
 			try:
 				due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
 			except ValueError:
@@ -1785,7 +1795,7 @@ try:
 
 			time_remaining = data[2] if len(data) > 2 else None
 
-			no_project_no_tag_branch.add(f"[red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
+			no_project_no_tag_branch.add(f"[yellow bold]{priority}[/yellow bold] [red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
 
 		console.print(tree)
 
