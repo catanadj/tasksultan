@@ -23,7 +23,7 @@ import calendar
 from datetime import date
 import texttable as tt
 import pandas as pd
-
+from fuzzywuzzy import process
 
 
 def main():
@@ -40,7 +40,8 @@ def main():
 		'td': print_tasks_for_selected_day,
 		'sp': call_and_process_task_projects,
 		'o' : display_overdue_tasks,
-		'rr': recurrent_report
+		'rr': recurrent_report,
+		'z': eisenhower
 	}
 	
 	parser = argparse.ArgumentParser(description='Process some commands.')
@@ -913,7 +914,7 @@ try:
 	
 	def search_project(project_list):
 		# Load from SultanDB
-		from fuzzywuzzy import process
+
 		
 		script_directory = os.path.dirname(os.path.abspath(__file__))
 		file_path = os.path.join(script_directory, "sultandb.json")
@@ -996,7 +997,9 @@ try:
 			'tl': ('Task list', ''),
 			'ht': ('Handle Task', ''),
 			'td': ('Daily tasks',''),
-			'o' : ('Overdue tasks list','')
+			'o' : ('Overdue tasks list',''),
+			'rr': ('Recurrent tasks report',''),
+			'z': ('Process or Value assignment','')
 		}
 
 		custom_style = Style([
@@ -1016,7 +1019,7 @@ try:
 			print("\nPlease select a command:")
 			for short, (full, emoji) in commands.items():
 				print(f"{short:<2}: {emoji} {full:<18}")
-			print("Or, press Enter to select a command from a list.")
+			print("type command or press Enter to select a command from list.")
 
 			command = input()
 			if command:
@@ -1227,6 +1230,11 @@ try:
 				print_tasks_for_selected_day()
 			elif command == 'Overdue tasks list':
 				display_overdue_tasks()
+			elif command == 'Recurrent tasks report':
+				recurrent_report()
+			elif command == 'Process or Value assignment':
+				eisenhower()
+
 
 
 	def search_data(aors, projects):
@@ -1922,6 +1930,279 @@ try:
 		console.print(f"Tasks Deleted: {total_status_counter['D']}")
 		console.print(f"Tasks Pending: {total_status_counter['P']}")
 		console.print(f"Average Completion Rate: {average_completion_percentage:.2%}")
+
+# ==================
+
+
+	def eisenhower():
+		try:
+			filter_query = input(Fore.CYAN + "Enter your Taskwarrior filter:\n ")
+
+			fork = input ("Do you want to asses priority (pri) or process (pro) the tasks?\n" + Fore.RED)
+
+			if fork == "pri":
+				tasks = get_tasks(filter_query)
+
+				for task in tasks:
+					display_task_details(task['uuid'])
+					print(Fore.CYAN + f"\nProcessing task: {task['description']}")
+					response = ask_questions()
+					if response in ['skip', 'done', 'del']:
+						if response == 'skip':
+							print(Fore.BLUE + "Skipping task.")
+						elif response == 'done':
+							run_taskwarrior_command(f"task {task['uuid']} done")
+							print(Fore.GREEN + "Marked task as done.")
+						elif response == 'del':
+							run_taskwarrior_command(f"task {task['uuid']} delete -y")
+							print(Fore.GREEN + f"Deleted task {task['uuid']}")
+						continue
+
+					urgency, importance = response
+					value = urgency * importance
+
+					# Update task with the calculated value
+					update_command = f"task {task['uuid']} modify value:{value}"
+					run_taskwarrior_command(update_command)
+					print(Fore.GREEN + f"Updated task with value: {value}")
+			elif fork == "pro":
+				tasks = get_inbox_tasks(filter_query)
+				for task in tasks:
+					process_task(task)
+		except KeyboardInterrupt:
+			print(Fore.RED + "\nProcess interrupted. Exiting.")
+			return
+
+
+	def run_taskwarrior_command(command):
+		try:
+			result = subprocess.check_output(command, shell=True, text=True)
+			return result
+		except subprocess.CalledProcessError as e:
+			print(f"An error occurred: {e}")
+			return None
+
+	def get_tasks(filter_query):
+		command = f"task {filter_query} +PENDING -CHILD export"
+		output = run_taskwarrior_command(command)
+		if output:
+			# Parse the JSON output into Python objects
+			tasks = json.loads(output)
+			return tasks
+		else:
+			return []
+
+	def ask_question(question):
+		while True:
+			response = input(question + Fore.WHITE + " (0-5, 'skip', 'done', 'del'): ").strip().lower()
+			if response in ['skip', 'done', 'del']:
+				return response
+			try:
+				response = int(response)
+				if 0 <= response <= 5:
+					return response
+				else:
+					print(Fore.RED + "Please enter a number between 0 and 5.")
+			except ValueError:
+				print("x_x")
+				print(Fore.RED + "Invalid input. Please enter a number between 0 and 5, 'skip', 'done', or 'del'.")
+				
+				
+
+
+	def ask_questions():
+		print(Fore.RED + "\nAssessing Importance:")
+		imp_questions = [
+		Fore.BLUE + "Impact on Objectives: How will completing this task impact my short-term and long-term objectives or goals?",
+		Fore.GREEN +  "Consequences of Neglect: What are the consequences if this task is not completed?",
+		Fore.CYAN +  "Value Addition: How much value does completing this task add to my project or overall work?",
+		Fore.WHITE +  "Stakeholder Expectations: Are there any stakeholders (like a boss, client, or team) who consider this task critical?",
+		Fore.YELLOW +  "Development Opportunities: Does this task offer any opportunities for personal or professional growth?",
+		Fore.MAGENTA + "Regret Minimization: In 20 years, will I regret not doing this?"
+		]
+
+		importance_scores = []
+		for q in imp_questions:
+			score = ask_question(q)
+			if score in ['skip', 'done', 'del']:
+				return score
+			importance_scores.append(score)
+
+		print(Fore.RED + "\nAssessing Urgency:")
+		urg_questions = [
+		Fore.RED + "Deadlines: Is there a fixed deadline for this task, and how soon is it?",
+		Fore.CYAN + "Dependency: Are other tasks or people dependent on the completion of this task?","Time Sensitivity: Will the task become more difficult or impossible if not done soon?",
+		Fore.WHITE + "Risk of Delay: What are the risks or costs associated with delaying this task?",
+		Fore.YELLOW + "Immediate Benefit: Is there an immediate benefit or relief from completing this task quickly?"
+		]
+
+		urgency_scores = []
+		for q in urg_questions:
+			score = ask_question(q)
+			if score in ['skip', 'done', 'del']:
+				return score
+			urgency_scores.append(score)
+
+		total_importance = sum(importance_scores)
+		total_urgency = sum(urgency_scores)
+
+		return total_urgency, total_importance
+		
+	def display_task_details(task_uuid):
+		command = f"task {task_uuid} export"
+		output = run_taskwarrior_command(command)
+		if output:
+			task_details = json.loads(output)
+			if task_details:
+				task = task_details[0]  # Assuming the first item is the task we want
+				for key, value in task.items():
+					print(f"{key}: {value}")
+			else:
+				print(Fore.RED + "No task details found.")
+		else:
+			print(Fore.RED + "Failed to retrieve task details.")
+
+	# =========================================================
+
+
+	def run_taskwarrior_command(command):
+		try:
+			result = subprocess.check_output(command, shell=True, text=True)
+			return result
+		except subprocess.CalledProcessError as e:
+			print(f"An error occurred: {e}")
+			return None
+
+	def get_inbox_tasks(filter):
+		command = f"task {filter} +PENDING -CHILD export"
+		output = run_taskwarrior_command(command)
+		if output:
+			tasks = json.loads(output)
+			return tasks
+		else:
+			return []
+
+	def process_input(lines):
+		level_text = {0: ''}
+		last_level = -1
+		spaces_per_level = 2  # adjust this if needed
+
+		# Ignore the first 4 and last 3 lines
+		lines = lines[4:-3]
+
+		output_lines = []  # Initialize the list to store all processed projects
+
+		for line in lines:
+			stripped = line.lstrip()
+			level = len(line) - len(stripped)
+
+			# Split the line into text and number, and only keep the text
+			text = stripped.split()[0]
+
+			if level % spaces_per_level != 0:
+				raise ValueError('Invalid indentation level in input')
+
+			level //= spaces_per_level
+
+			if level > last_level + 1:
+				raise ValueError('Indentation level increased by more than 1')
+
+			level_text[level] = text
+
+			# Clear all deeper levels
+			level_text = {k: v for k, v in level_text.items() if k <= level}
+
+			output_line = '.'.join(level_text[l] for l in range(level + 1))
+
+			output_lines.append(output_line)  # Add each processed project to the list
+
+			last_level = level
+		
+		return output_lines  # Return the list of all processed projects
+
+
+	def call_and_process_task_projects():
+		result = subprocess.run(['task', 'projects'], capture_output=True, text=True)
+		lines = result.stdout.splitlines()
+		project_list = process_input(lines)
+		return project_list
+
+	def search_project(project_list):
+		completer = FuzzyWordCompleter(project_list)
+		item_name = prompt("Enter a project name: ", completer=completer)
+		closest_match, match_score = process.extractOne(item_name, project_list)
+
+		# You can adjust the threshold based on how strict you want the matching to be
+		MATCH_THRESHOLD = 80  # For example, 80 out of 100
+
+		if match_score >= MATCH_THRESHOLD:
+			return closest_match
+		else:
+			return item_name  # Use the new name entered by the user
+
+	def display_task_details(task_uuid):
+		command = f"task {task_uuid} export"
+		output = run_taskwarrior_command(command)
+		if output:
+			task_details = json.loads(output)
+			if task_details:
+				task = task_details[0]  # Assuming the first item is the task we want
+				for key, value in task.items():
+					print(f"{key}: {value}")
+			else:
+				print(Fore.RED + "No task details found.")
+		else:
+			print(Fore.RED + "Failed to retrieve task details.")
+
+	def add_new_task_to_project(project_name):
+		while True:
+			new_task_description = input("Enter the description for the new task (or press Enter to stop adding tasks): ")
+			if new_task_description.lower() in ['exit','']:
+				break
+
+			if new_task_description:
+				command = f"task add {new_task_description} project:{project_name} -in"
+				run_taskwarrior_command(command)
+				print(Fore.GREEN + "New task added to the project.")
+
+	def process_task(task):
+		print(Fore.YELLOW + f"\nProcessing task: {task['description']}")
+		action = input("Choose action: modify (mod) /skip (s) /delete (del) /done (d)):\n ").strip().lower()
+
+		if action == 'mod':
+			print(Fore.YELLOW + "Task details:")
+			display_task_details(task['uuid'])
+			mod_confirm = input("Do you want to modify this task? (yes/no):\n ").strip().lower()
+			if mod_confirm in ['yes','y']:
+				modification = input("Enter modification (e.g., '+tag @context priority'):\n ")
+				run_taskwarrior_command(f"task {task['uuid']} modify {modification} -in")
+
+			pro_confirm = input("Do you want to assign this task to a project? (yes/no):\n ").strip().lower()
+			if pro_confirm in ['yes','y']:
+				project_list = call_and_process_task_projects()
+				selected_project = search_project(project_list)
+				run_taskwarrior_command(f"task {task['uuid']} modify project:{selected_project} -in")
+				print(Fore.GREEN + f"Task categorized under project: {selected_project}\n")
+
+				# Ask if user wants to add another task to the same project
+				add_another = input("Do you want to add another task to this project? (yes/no): ").strip().lower()
+				if add_another in ['yes', 'y']:
+					add_new_task_to_project(selected_project)
+		elif action == 'skip':
+			print(Fore.BLUE + "Skipping task.")
+		elif action == 'del':
+			run_taskwarrior_command(f"task {task['uuid']} delete -y")
+			print(Fore.RED + f"Deleted task {task['uuid']}")
+		elif action == 'd':
+			run_taskwarrior_command(f"task {task['uuid']} done")
+			print(Fore.GREEN + f"Marked = {task['uuid']} = as done.")
+
+			# =========================================================
+
+
+
+
+# ==================
 
 
 	if __name__ == "__main__":
