@@ -23,7 +23,7 @@ import calendar
 from datetime import date
 import texttable as tt
 import pandas as pd
-
+from fuzzywuzzy import process
 
 
 def main():
@@ -40,7 +40,8 @@ def main():
 		'td': print_tasks_for_selected_day,
 		'sp': call_and_process_task_projects,
 		'o' : display_overdue_tasks,
-		'rr': recurrent_report
+		'rr': recurrent_report,
+		'z': eisenhower
 	}
 	
 	parser = argparse.ArgumentParser(description='Process some commands.')
@@ -132,7 +133,7 @@ try:
 		# Display overdue tasks
 		if overdue_tasks:
 			for task in overdue_tasks:
-				task_id = colored(f"{task['id']}", 'red')
+				task_id = colored(f"{task['id']}", 'yellow')
 				description = colored(task['description'], 'cyan')
 				tag = colored(','.join(task.get('tags', [])), 'red', attrs=['bold'])  # Join tags with comma
 				project = colored(task.get('project', ''), 'blue', attrs=['bold'])
@@ -464,7 +465,7 @@ try:
 			if tasks:
 				print(colored(name, 'yellow', attrs=['bold']))
 				for task in tasks:
-					task_id = colored(f"[{task['id']}]", 'red')
+					task_id = colored(f"[{task['id']}]", 'yellow')
 					description = colored(task['description'], 'cyan')
 					tag = colored(','.join(task.get('tags', [])), 'red', attrs=['bold'])  # Join tags with comma
 					project = colored(task.get('project', ''), 'blue', attrs=['bold'])
@@ -603,7 +604,7 @@ try:
 							due_date = datetime.strptime(task['due'], '%Y%m%dT%H%M%SZ')
 							time_remaining = due_date - datetime.now()
 							time_remaining = str(time_remaining).split('.')[0]
-						print(f"\t{Fore.RED}{task_id}{Fore.RESET}, {Fore.CYAN}{task_description}{Fore.RESET} {time_remaining}")
+						print(f"\t{Fore.YELLOW}{task_id}{Fore.RESET}, {Fore.CYAN}{task_description}{Fore.RESET} {time_remaining}")
 					elif not task_tags and (task_project == item['name'] or task_project.startswith("AoR." + item['name'])):
 						if task not in no_tag_tasks:  # Add tasks without tags to the list only if not already included
 							no_tag_tasks.append(task)
@@ -833,15 +834,19 @@ try:
 		console = Console()
 		warrior = TaskWarrior()
 		tasks = warrior.load_tasks()
-		selected_project = selected_item
 
+		selected_project = selected_item
 		project_data = defaultdict(lambda: defaultdict(list))
 		now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+
+		# Create a dictionary to store the dependencies
+		task_dependencies = {}
 
 		for task in tasks['pending']:
 			project = task.get('project', None)
 			if not project or not (project == selected_project or project.startswith(selected_project + '.')):
 				continue
+
 			annotations = task.get('annotations', [])
 			tags = task.get('tags', [])
 			description = task.get('description', '')
@@ -850,12 +855,19 @@ try:
 			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
 			time_remaining = due_date - now if due_date else None
 			time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+			dependencies = task.get('depends', [])
+
+			# Store the dependencies in the task_dependencies dictionary
+			for dependency in dependencies:
+				if dependency not in task_dependencies:
+					task_dependencies[dependency] = []
+				task_dependencies[dependency].append(task['uuid'])
 
 			if tags:
 				for tag in tags:
-					project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations])
+					project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task['uuid']])
 			else:
-				project_data[project]["NTT"].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations])
+				project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task['uuid']])
 
 		tree = Tree("Saikou", style="green bold")
 
@@ -875,22 +887,20 @@ try:
 
 				for data in tasks_data:
 					task_data = data[0]
-					task_id, description = (task_data.split(" ", 1) + [""])[:2]
-
+					task_id, description = (task_data.split(" ", 1) + [""])[: 2]
 					due_date = data[1] if len(data) > 1 else None
 					try:
 						due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
 					except ValueError:
 						due_date_formatted = ""
-
 					time_remaining = data[2] if len(data) > 2 else None
+					task_uuid = data[4]  # Get the task UUID
 
 					# If time_remaining exists, format with bold style
 					if time_remaining:
 						description_text = Text(description, style="white")
 					else:  # If not, just add color without bold style
 						description_text = Text(description, style="red")
-
 					task_id_text = Text(task_id, style="red bold")
 					due_date_text = Text(due_date_formatted, style="blue bold")
 					time_remaining_text = Text(time_remaining, style="green bold")
@@ -901,6 +911,15 @@ try:
 					# Now add the text_line to tag_branch
 					task_branch = tag_branch.add(text_line)
 
+					# Add dependent tasks as children
+					if task_uuid in task_dependencies:
+						for dependent_task_uuid in task_dependencies[task_uuid]:
+							dependent_task = next((task for task in tasks['pending'] if task['uuid'] == dependent_task_uuid), None)
+							if dependent_task:
+								dependent_description = dependent_task.get('description', '')
+								dependent_text = Text(f"{dependent_task_uuid} {dependent_description}", style="yellow")
+								task_branch.add(dependent_text)
+
 					annotations = data[3] if len(data) > 3 else []
 					if annotations:
 						for annotation in annotations:
@@ -909,11 +928,12 @@ try:
 							annotation_entry_date = datetime.strptime(annotation_entry, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d")
 							annotation_text = f"[magenta]{annotation_entry_date}[/magenta][yellow] {annotation_description}[/yellow]"
 							task_branch.add(annotation_text)
+
 		console.print(tree)
-	
+		
 	def search_project(project_list):
 		# Load from SultanDB
-		from fuzzywuzzy import process
+
 		
 		script_directory = os.path.dirname(os.path.abspath(__file__))
 		file_path = os.path.join(script_directory, "sultandb.json")
@@ -996,7 +1016,9 @@ try:
 			'tl': ('Task list', ''),
 			'ht': ('Handle Task', ''),
 			'td': ('Daily tasks',''),
-			'o' : ('Overdue tasks list','')
+			'o' : ('Overdue tasks list',''),
+			'rr': ('Recurrent tasks report',''),
+			'z': ('Process or Value assignment','')
 		}
 
 		custom_style = Style([
@@ -1016,7 +1038,7 @@ try:
 			print("\nPlease select a command:")
 			for short, (full, emoji) in commands.items():
 				print(f"{short:<2}: {emoji} {full:<18}")
-			print("Or, press Enter to select a command from a list.")
+			print("type command or press Enter to select a command from list.")
 
 			command = input()
 			if command:
@@ -1227,6 +1249,11 @@ try:
 				print_tasks_for_selected_day()
 			elif command == 'Overdue tasks list':
 				display_overdue_tasks()
+			elif command == 'Recurrent tasks report':
+				recurrent_report()
+			elif command == 'Process or Value assignment':
+				eisenhower()
+
 
 
 	def search_data(aors, projects):
@@ -1546,7 +1573,7 @@ try:
 						time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
 						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
 				else:
-					project_data[project]["nTT"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
 			else:
 				# For tasks without a project, we will put them under "No Project" key
 				if tags:
@@ -1617,7 +1644,7 @@ try:
 				else:
 					time_remaining = due_date - now if due_date else None
 					time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
-					project_data[project]["NTT"] = [f"{task_id} {description}", due_date_str, time_remaining_str]
+					project_data[project]["No Tag"] = [f"{task_id} {description}", due_date_str, time_remaining_str]
 
 			else:
 				# For tasks without a project, we will put them under "No Project" key
@@ -1707,18 +1734,19 @@ try:
 			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
 			time_remaining = due_date - now if due_date else None
 			time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+			priority = task.get('priority', '')
 
 			if project:
 				if tags:
 					for tag in tags:
-						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str,priority])
 				else:
-					project_data[project]["NTT"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str,priority])
 			elif tags:
 				for tag in tags:
-					no_project_data[tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+					no_project_data[tag].append([f"{task_id} {description}", due_date_str, time_remaining_str,priority])
 			else:
-				no_project_no_tag_data.append([f"{task_id} {description}", due_date_str, time_remaining_str])
+				no_project_no_tag_data.append([f"{task_id} {description}", due_date_str, time_remaining_str,priority])
 
 		tree = Tree("Saikou", style="green bold")
 
@@ -1743,6 +1771,7 @@ try:
 					task_data = data[0]
 					task_id, description = (task_data.split(" ", 1) + [""])[:2]
 					due_date = data[1] if len(data) > 1 else None
+					priority = data[3] if len(data) > 3 else 'No Priority'
 					try:
 						due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
 					except ValueError:
@@ -1750,7 +1779,13 @@ try:
 
 					time_remaining = data[2] if len(data) > 2 else None
 
-					tag_branch.add(f"[red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
+					color_pri = ""
+					if priority == "H" :
+						color_pri = "red"
+					else:
+						color_pri = "white"
+
+					tag_branch.add(f"[yellow bold]{priority}[/yellow bold] [red bold]{task_id}[/red bold] [{color_pri}]{description}[/{color_pri}] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
 
 		# Handle "No Project" tasks
 		no_project_branch = tree.add("No Project", style="red bold")
@@ -1762,6 +1797,7 @@ try:
 				task_data = data[0]
 				task_id, description = (task_data.split(" ", 1) + [""])[:2]
 				due_date = data[1] if len(data) > 1 else None
+				priority = data[3] if len(data) > 3 else 'No Priority'
 				try:
 					due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
 				except ValueError:
@@ -1769,7 +1805,7 @@ try:
 
 				time_remaining = data[2] if len(data) > 2 else None
 
-				tag_branch.add(f"[red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
+				tag_branch.add(f"[yellow bold]{priority}[/yellow bold] [red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold] ")
 
 		# Handle "No Project, No Tag" tasks
 		no_project_no_tag_branch = tree.add("No Project, No Tag", style="red bold")
@@ -1778,6 +1814,7 @@ try:
 			task_data = data[0]
 			task_id, description = (task_data.split(" ", 1) + [""])[:2]
 			due_date = data[1] if len(data) > 1 else None
+			priority = data[3] if len(data) > 3 else 'No Priority'
 			try:
 				due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
 			except ValueError:
@@ -1785,7 +1822,7 @@ try:
 
 			time_remaining = data[2] if len(data) > 2 else None
 
-			no_project_no_tag_branch.add(f"[red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
+			no_project_no_tag_branch.add(f"[yellow bold]{priority}[/yellow bold] [red bold]{task_id}[/red bold] [white]{description}[/white] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
 
 		console.print(tree)
 
@@ -1912,6 +1949,279 @@ try:
 		console.print(f"Tasks Deleted: {total_status_counter['D']}")
 		console.print(f"Tasks Pending: {total_status_counter['P']}")
 		console.print(f"Average Completion Rate: {average_completion_percentage:.2%}")
+
+# ==================
+
+
+	def eisenhower():
+		try:
+			filter_query = input(Fore.CYAN + "Enter your Taskwarrior filter:\n ")
+
+			fork = input ("Do you want to asses priority (pri) or process (pro) the tasks?\n" + Fore.RED)
+
+			if fork == "pri":
+				tasks = get_tasks(filter_query)
+
+				for task in tasks:
+					display_task_details(task['uuid'])
+					print(Fore.CYAN + f"\nProcessing task: {task['description']}")
+					response = ask_questions()
+					if response in ['skip', 'done', 'del']:
+						if response == 'skip':
+							print(Fore.BLUE + "Skipping task.")
+						elif response == 'done':
+							run_taskwarrior_command(f"task {task['uuid']} done")
+							print(Fore.GREEN + "Marked task as done.")
+						elif response == 'del':
+							run_taskwarrior_command(f"task {task['uuid']} delete -y")
+							print(Fore.GREEN + f"Deleted task {task['uuid']}")
+						continue
+
+					urgency, importance = response
+					value = urgency * importance
+
+					# Update task with the calculated value
+					update_command = f"task {task['uuid']} modify value:{value}"
+					run_taskwarrior_command(update_command)
+					print(Fore.GREEN + f"Updated task with value: {value}")
+			elif fork == "pro":
+				tasks = get_inbox_tasks(filter_query)
+				for task in tasks:
+					process_task(task)
+		except KeyboardInterrupt:
+			print(Fore.RED + "\nProcess interrupted. Exiting.")
+			return
+
+
+	def run_taskwarrior_command(command):
+		try:
+			result = subprocess.check_output(command, shell=True, text=True)
+			return result
+		except subprocess.CalledProcessError as e:
+			print(f"An error occurred: {e}")
+			return None
+
+	def get_tasks(filter_query):
+		command = f"task {filter_query} +PENDING -CHILD export"
+		output = run_taskwarrior_command(command)
+		if output:
+			# Parse the JSON output into Python objects
+			tasks = json.loads(output)
+			return tasks
+		else:
+			return []
+
+	def ask_question(question):
+		while True:
+			response = input(question + Fore.WHITE + " (0-5, 'skip', 'done', 'del'): ").strip().lower()
+			if response in ['skip', 'done', 'del']:
+				return response
+			try:
+				response = int(response)
+				if 0 <= response <= 5:
+					return response
+				else:
+					print(Fore.RED + "Please enter a number between 0 and 5.")
+			except ValueError:
+				print("x_x")
+				print(Fore.RED + "Invalid input. Please enter a number between 0 and 5, 'skip', 'done', or 'del'.")
+				
+				
+
+
+	def ask_questions():
+		print(Fore.RED + "\nAssessing Importance:")
+		imp_questions = [
+		Fore.BLUE + "Impact on Objectives: How will completing this task impact my short-term and long-term objectives or goals?",
+		Fore.GREEN +  "Consequences of Neglect: What are the consequences if this task is not completed?",
+		Fore.CYAN +  "Value Addition: How much value does completing this task add to my project or overall work?",
+		Fore.WHITE +  "Stakeholder Expectations: Are there any stakeholders (like a boss, client, or team) who consider this task critical?",
+		Fore.YELLOW +  "Development Opportunities: Does this task offer any opportunities for personal or professional growth?",
+		Fore.MAGENTA + "Regret Minimization: In 20 years, will I regret not doing this?"
+		]
+
+		importance_scores = []
+		for q in imp_questions:
+			score = ask_question(q)
+			if score in ['skip', 'done', 'del']:
+				return score
+			importance_scores.append(score)
+
+		print(Fore.RED + "\nAssessing Urgency:")
+		urg_questions = [
+		Fore.RED + "Deadlines: Is there a fixed deadline for this task, and how soon is it?",
+		Fore.CYAN + "Dependency: Are other tasks or people dependent on the completion of this task?","Time Sensitivity: Will the task become more difficult or impossible if not done soon?",
+		Fore.WHITE + "Risk of Delay: What are the risks or costs associated with delaying this task?",
+		Fore.YELLOW + "Immediate Benefit: Is there an immediate benefit or relief from completing this task quickly?"
+		]
+
+		urgency_scores = []
+		for q in urg_questions:
+			score = ask_question(q)
+			if score in ['skip', 'done', 'del']:
+				return score
+			urgency_scores.append(score)
+
+		total_importance = sum(importance_scores)
+		total_urgency = sum(urgency_scores)
+
+		return total_urgency, total_importance
+		
+	def display_task_details(task_uuid):
+		command = f"task {task_uuid} export"
+		output = run_taskwarrior_command(command)
+		if output:
+			task_details = json.loads(output)
+			if task_details:
+				task = task_details[0]  # Assuming the first item is the task we want
+				for key, value in task.items():
+					print(f"{key}: {value}")
+			else:
+				print(Fore.RED + "No task details found.")
+		else:
+			print(Fore.RED + "Failed to retrieve task details.")
+
+	# =========================================================
+
+
+	def run_taskwarrior_command(command):
+		try:
+			result = subprocess.check_output(command, shell=True, text=True)
+			return result
+		except subprocess.CalledProcessError as e:
+			print(f"An error occurred: {e}")
+			return None
+
+	def get_inbox_tasks(filter):
+		command = f"task {filter} +PENDING -CHILD export"
+		output = run_taskwarrior_command(command)
+		if output:
+			tasks = json.loads(output)
+			return tasks
+		else:
+			return []
+
+	def process_input(lines):
+		level_text = {0: ''}
+		last_level = -1
+		spaces_per_level = 2  # adjust this if needed
+
+		# Ignore the first 4 and last 3 lines
+		lines = lines[4:-3]
+
+		output_lines = []  # Initialize the list to store all processed projects
+
+		for line in lines:
+			stripped = line.lstrip()
+			level = len(line) - len(stripped)
+
+			# Split the line into text and number, and only keep the text
+			text = stripped.split()[0]
+
+			if level % spaces_per_level != 0:
+				raise ValueError('Invalid indentation level in input')
+
+			level //= spaces_per_level
+
+			if level > last_level + 1:
+				raise ValueError('Indentation level increased by more than 1')
+
+			level_text[level] = text
+
+			# Clear all deeper levels
+			level_text = {k: v for k, v in level_text.items() if k <= level}
+
+			output_line = '.'.join(level_text[l] for l in range(level + 1))
+
+			output_lines.append(output_line)  # Add each processed project to the list
+
+			last_level = level
+		
+		return output_lines  # Return the list of all processed projects
+
+
+	def call_and_process_task_projects2():
+		result = subprocess.run(['task', 'projects'], capture_output=True, text=True)
+		lines = result.stdout.splitlines()
+		project_list = process_input(lines)
+		return project_list
+
+	def search_project2(project_list):
+		completer = FuzzyWordCompleter(project_list)
+		item_name = prompt("Enter a project name: ", completer=completer)
+		closest_match, match_score = process.extractOne(item_name, project_list)
+
+		# You can adjust the threshold based on how strict you want the matching to be
+		MATCH_THRESHOLD = 80  # For example, 80 out of 100
+
+		if match_score >= MATCH_THRESHOLD:
+			return closest_match
+		else:
+			return item_name  # Use the new name entered by the user
+
+	def display_task_details(task_uuid):
+		command = f"task {task_uuid} export"
+		output = run_taskwarrior_command(command)
+		if output:
+			task_details = json.loads(output)
+			if task_details:
+				task = task_details[0]  # Assuming the first item is the task we want
+				for key, value in task.items():
+					print(f"{key}: {value}")
+			else:
+				print(Fore.RED + "No task details found.")
+		else:
+			print(Fore.RED + "Failed to retrieve task details.")
+
+	def add_new_task_to_project(project_name):
+		while True:
+			new_task_description = input("Enter the description for the new task (or press Enter to stop adding tasks): ")
+			if new_task_description.lower() in ['exit','']:
+				break
+
+			if new_task_description:
+				command = f"task add {new_task_description} project:{project_name} -in"
+				run_taskwarrior_command(command)
+				print(Fore.GREEN + "New task added to the project.")
+
+	def process_task(task):
+		print(Fore.YELLOW + f"\nProcessing task: {task['description']}")
+		action = input("Choose action: modify (mod) /skip (s) /delete (del) /done (d)):\n ").strip().lower()
+
+		if action == 'mod':
+			print(Fore.YELLOW + "Task details:")
+			display_task_details(task['uuid'])
+			mod_confirm = input("Do you want to modify this task? (yes/no):\n ").strip().lower()
+			if mod_confirm in ['yes','y']:
+				modification = input("Enter modification (e.g., '+tag @context priority'):\n ")
+				run_taskwarrior_command(f"task {task['uuid']} modify {modification} -in")
+
+			pro_confirm = input("Do you want to assign this task to a project? (yes/no):\n ").strip().lower()
+			if pro_confirm in ['yes','y']:
+				project_list = call_and_process_task_projects2()
+				selected_project = search_project2(project_list)
+				run_taskwarrior_command(f"task {task['uuid']} modify project:{selected_project} -in")
+				print(Fore.GREEN + f"Task categorized under project: {selected_project}\n")
+
+				# Ask if user wants to add another task to the same project
+				add_another = input("Do you want to add another task to this project? (yes/no): ").strip().lower()
+				if add_another in ['yes', 'y']:
+					add_new_task_to_project(selected_project)
+		elif action == 'skip':
+			print(Fore.BLUE + "Skipping task.")
+		elif action == 'del':
+			run_taskwarrior_command(f"task {task['uuid']} delete -y")
+			print(Fore.RED + f"Deleted task {task['uuid']}")
+		elif action == 'd':
+			run_taskwarrior_command(f"task {task['uuid']} done")
+			print(Fore.GREEN + f"Marked = {task['uuid']} = as done.")
+
+			# =========================================================
+
+
+
+
+# ==================
 
 
 	if __name__ == "__main__":
