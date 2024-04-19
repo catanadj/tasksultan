@@ -834,15 +834,19 @@ try:
 		console = Console()
 		warrior = TaskWarrior()
 		tasks = warrior.load_tasks()
-		selected_project = selected_item
 
+		selected_project = selected_item
 		project_data = defaultdict(lambda: defaultdict(list))
 		now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+
+		# Create a dictionary to store the dependencies
+		task_dependencies = {}
 
 		for task in tasks['pending']:
 			project = task.get('project', None)
 			if not project or not (project == selected_project or project.startswith(selected_project + '.')):
 				continue
+
 			annotations = task.get('annotations', [])
 			tags = task.get('tags', [])
 			description = task.get('description', '')
@@ -851,12 +855,19 @@ try:
 			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
 			time_remaining = due_date - now if due_date else None
 			time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+			dependencies = task.get('depends', [])
+
+			# Store the dependencies in the task_dependencies dictionary
+			for dependency in dependencies:
+				if dependency not in task_dependencies:
+					task_dependencies[dependency] = []
+				task_dependencies[dependency].append(task['uuid'])
 
 			if tags:
 				for tag in tags:
-					project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations])
+					project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task['uuid']])
 			else:
-				project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations])
+				project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task['uuid']])
 
 		tree = Tree("Saikou", style="green bold")
 
@@ -876,22 +887,20 @@ try:
 
 				for data in tasks_data:
 					task_data = data[0]
-					task_id, description = (task_data.split(" ", 1) + [""])[:2]
-
+					task_id, description = (task_data.split(" ", 1) + [""])[: 2]
 					due_date = data[1] if len(data) > 1 else None
 					try:
 						due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
 					except ValueError:
 						due_date_formatted = ""
-
 					time_remaining = data[2] if len(data) > 2 else None
+					task_uuid = data[4]  # Get the task UUID
 
 					# If time_remaining exists, format with bold style
 					if time_remaining:
 						description_text = Text(description, style="white")
 					else:  # If not, just add color without bold style
 						description_text = Text(description, style="red")
-
 					task_id_text = Text(task_id, style="red bold")
 					due_date_text = Text(due_date_formatted, style="blue bold")
 					time_remaining_text = Text(time_remaining, style="green bold")
@@ -902,6 +911,15 @@ try:
 					# Now add the text_line to tag_branch
 					task_branch = tag_branch.add(text_line)
 
+					# Add dependent tasks as children
+					if task_uuid in task_dependencies:
+						for dependent_task_uuid in task_dependencies[task_uuid]:
+							dependent_task = next((task for task in tasks['pending'] if task['uuid'] == dependent_task_uuid), None)
+							if dependent_task:
+								dependent_description = dependent_task.get('description', '')
+								dependent_text = Text(f"{dependent_task_uuid} {dependent_description}", style="yellow")
+								task_branch.add(dependent_text)
+
 					annotations = data[3] if len(data) > 3 else []
 					if annotations:
 						for annotation in annotations:
@@ -910,8 +928,9 @@ try:
 							annotation_entry_date = datetime.strptime(annotation_entry, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d")
 							annotation_text = f"[magenta]{annotation_entry_date}[/magenta][yellow] {annotation_description}[/yellow]"
 							task_branch.add(annotation_text)
+
 		console.print(tree)
-	
+		
 	def search_project(project_list):
 		# Load from SultanDB
 
@@ -2121,13 +2140,13 @@ try:
 		return output_lines  # Return the list of all processed projects
 
 
-	def call_and_process_task_projects():
+	def call_and_process_task_projects2():
 		result = subprocess.run(['task', 'projects'], capture_output=True, text=True)
 		lines = result.stdout.splitlines()
 		project_list = process_input(lines)
 		return project_list
 
-	def search_project(project_list):
+	def search_project2(project_list):
 		completer = FuzzyWordCompleter(project_list)
 		item_name = prompt("Enter a project name: ", completer=completer)
 		closest_match, match_score = process.extractOne(item_name, project_list)
@@ -2179,8 +2198,8 @@ try:
 
 			pro_confirm = input("Do you want to assign this task to a project? (yes/no):\n ").strip().lower()
 			if pro_confirm in ['yes','y']:
-				project_list = call_and_process_task_projects()
-				selected_project = search_project(project_list)
+				project_list = call_and_process_task_projects2()
+				selected_project = search_project2(project_list)
 				run_taskwarrior_command(f"task {task['uuid']} modify project:{selected_project} -in")
 				print(Fore.GREEN + f"Task categorized under project: {selected_project}\n")
 
