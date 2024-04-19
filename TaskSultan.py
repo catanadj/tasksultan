@@ -843,10 +843,6 @@ try:
 		task_dependencies = {}
 
 		for task in tasks['pending']:
-			project = task.get('project', None)
-			if not project or not (project == selected_project or project.startswith(selected_project + '.')):
-				continue
-
 			annotations = task.get('annotations', [])
 			tags = task.get('tags', [])
 			description = task.get('description', '')
@@ -856,69 +852,77 @@ try:
 			time_remaining = due_date - now if due_date else None
 			time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
 			dependencies = task.get('depends', [])
+			project = task.get('project', 'No Project')
+			task_uuid = task['uuid']
 
 			# Store the dependencies in the task_dependencies dictionary
 			for dependency in dependencies:
 				if dependency not in task_dependencies:
 					task_dependencies[dependency] = []
-				task_dependencies[dependency].append(task['uuid'])
+				task_dependencies[dependency].append(task_uuid)
 
-			if tags:
-				for tag in tags:
-					project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task['uuid']])
-			else:
-				project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task['uuid']])
+			data = [f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task_uuid, project, tags]
+			project_data[project]["All Tasks"].append(data)
 
 		tree = Tree("Saikou", style="green bold")
 
 		for project, tag_data in project_data.items():
-			project_levels = project.split(".")
-			project_branch = tree
+			project_branch = tree.add(Text(project, style='cyan bold'))
 
-			for level_idx, level in enumerate(project_levels):
-				if level not in [child.label.plain for child in project_branch.children]:
-					project_branch = project_branch.add(Text(level, style=f'{colors[level_idx % len(colors)]}bold'))
-				else:
-					project_branch = next(child for child in project_branch.children if child.label.plain == level)
+			tag_branch = project_branch.add(Text("All Tasks", style='blue bold'))
 
-			for tag, tasks_data in sorted(tag_data.items()):
-				tag_color = 'blue' if not project.startswith("AoR.") else 'cyan'
-				tag_branch = project_branch.add(Text(tag, style=f'{tag_color} bold'))
+			task_uuids_added = set()
+			for data in tag_data["All Tasks"]:
+				task_data = data[0]
+				task_id, description = (task_data.split(" ", 1) + [""])[: 2]
+				due_date = data[1] if len(data) > 1 else None
+				try:
+					due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
+				except ValueError:
+					due_date_formatted = ""
+				time_remaining = data[2] if len(data) > 2 else None
+				task_uuid = data[4]
+				project_name = data[5]
+				tags = data[6]
 
-				for data in tasks_data:
-					task_data = data[0]
-					task_id, description = (task_data.split(" ", 1) + [""])[: 2]
-					due_date = data[1] if len(data) > 1 else None
-					try:
-						due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
-					except ValueError:
-						due_date_formatted = ""
-					time_remaining = data[2] if len(data) > 2 else None
-					task_uuid = data[4]  # Get the task UUID
+				# If time_remaining exists, format with bold style
+				if time_remaining:
+					description_text = Text(description, style="white")
+				else:  # If not, just add color without bold style
+					description_text = Text(description, style="red")
+				task_id_text = Text(task_id, style="red bold")
+				due_date_text = Text(due_date_formatted, style="blue bold")
+				time_remaining_text = Text(time_remaining, style="green bold")
+				project_text = Text(f"[{project_name}]", style="magenta")
+				tags_text = Text(" ".join(tags), style="yellow")
 
-					# If time_remaining exists, format with bold style
-					if time_remaining:
-						description_text = Text(description, style="white")
-					else:  # If not, just add color without bold style
-						description_text = Text(description, style="red")
-					task_id_text = Text(task_id, style="red bold")
-					due_date_text = Text(due_date_formatted, style="blue bold")
-					time_remaining_text = Text(time_remaining, style="green bold")
+				# Create text line without adding it to tag_branch
+				text_line = task_id_text + Text(" ") + description_text + Text(" ") + due_date_text + Text(" ") + time_remaining_text + Text(" ") + project_text + Text(" ") + tags_text
 
-					# Create text line without adding it to tag_branch
-					text_line = task_id_text + Text(" ") + description_text + Text(" ") + due_date_text + Text(" ") + time_remaining_text
-
-					# Now add the text_line to tag_branch
+				# Add the task only if it hasn't been added before
+				if task_uuid not in task_uuids_added:
 					task_branch = tag_branch.add(text_line)
+					task_uuids_added.add(task_uuid)
 
 					# Add dependent tasks as children
-					if task_uuid in task_dependencies:
-						for dependent_task_uuid in task_dependencies[task_uuid]:
-							dependent_task = next((task for task in tasks['pending'] if task['uuid'] == dependent_task_uuid), None)
-							if dependent_task:
-								dependent_description = dependent_task.get('description', '')
-								dependent_text = Text(f"{dependent_task_uuid} {dependent_description}", style="yellow")
-								task_branch.add(dependent_text)
+					def add_dependent_tasks(task_branch, dependencies, task_uuid, level=1):
+						for dependency in dependencies:
+							if dependency in task_dependencies:
+								for dependent_task_uuid in task_dependencies[dependency]:
+									if dependent_task_uuid not in task_uuids_added:
+										dependent_task = next((task for task in tasks['pending'] if task['uuid'] == dependent_task_uuid), None)
+										if dependent_task:
+											dependent_description = dependent_task.get('description', '')
+											dependent_project = dependent_task.get('project', 'No Project')
+											dependent_tags = dependent_task.get('tags', [])
+											level_text = f"{level}." if level > 1 else ""
+											dependent_text = Text(f"{level_text}{dependent_task_uuid} {dependent_description} [{dependent_project}] {' '.join(dependent_tags)}", style="yellow")
+											dependent_branch = task_branch.add(dependent_text)
+											task_uuids_added.add(dependent_task_uuid)
+											dep_dependencies = dependent_task.get('depends', [])
+											add_dependent_tasks(dependent_branch, dep_dependencies, dependent_task_uuid, level + 1)
+
+					add_dependent_tasks(task_branch, task_dependencies.get(task_uuid, []), task_uuid)
 
 					annotations = data[3] if len(data) > 3 else []
 					if annotations:
@@ -931,6 +935,7 @@ try:
 
 		console.print(tree)
 		
+
 	def search_project(project_list):
 		# Load from SultanDB
 
