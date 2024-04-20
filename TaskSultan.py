@@ -833,6 +833,7 @@ try:
 		from rich.console import Console
 		from datetime import datetime
 		import pytz
+		from dateutil.parser import parse
 
 		console = Console()
 		warrior = TaskWarrior()
@@ -843,20 +844,21 @@ try:
 		now = datetime.utcnow().replace(tzinfo=pytz.UTC)
 		all_tasks = {task['uuid']: task for task in tasks['pending']}
 
-		# Determine relevance of a task
+		# Ensure to use 'id' from Taskwarrior's task structure
+		uuid_to_real_id = {task['uuid']: task['id'] for task in tasks['pending']}
+
 		def is_relevant(task):
 			project = task.get('project')
 			return project and (project == selected_project or project.startswith(selected_project + '.'))
 
-		# Recursively add tasks to the dictionary if they are relevant or dependencies of a relevant task
-		def collect_tasks(task_id, visited=set()):
-			if task_id in visited or task_id not in all_tasks:
+		def collect_tasks(task_uuid, visited=set()):
+			if task_uuid in visited or task_uuid not in all_tasks:
 				return
-			visited.add(task_id)
-			task = all_tasks[task_id]
+			visited.add(task_uuid)
+			task = all_tasks[task_uuid]
 			dependencies = task.get('depends', [])
 
-			task_dict[task_id] = {
+			task_dict[task_uuid] = {
 				'project': task.get('project'),
 				'description': task.get('description', ''),
 				'due_date': task.get('due'),
@@ -866,44 +868,101 @@ try:
 				'dependencies': dependencies
 			}
 
-			# Recurse into dependencies regardless of their project
-			for dep_id in dependencies:
-				collect_tasks(dep_id, visited)
+			for dep_uuid in dependencies:
+				collect_tasks(dep_uuid, visited)
 
-		# Helper to calculate time remaining
-		def calculate_time_remaining(due_date_str, now):
-			if due_date_str:
-				due_date = parse(due_date_str)
-				time_remaining = due_date - now
-				return str(time_remaining)[:-7]
-			return ''
-
-		# Collect all tasks under the selected project and their dependencies
-		for task_id, task in all_tasks.items():
+		for task_uuid, task in all_tasks.items():
 			if is_relevant(task):
-				collect_tasks(task_id)
+				collect_tasks(task_uuid)
 
-		# Create a single tree for the selected project
 		tree = Tree(f"Project Summary: {selected_project}", style="green bold")
 
-		# Function to recursively add tasks to the tree
-		def add_task_to_tree(task_id, parent_branch):
-			if task_id not in task_dict:
+		# Get the current local timezone
+		local_tz = datetime.now().astimezone().tzinfo
+		
+		def add_task_to_tree(task_uuid, parent_branch):
+			if task_uuid not in task_dict:
 				return
-			task = task_dict[task_id]
-			task_description = f"{task_id} {task['description']}"
-			task_branch = parent_branch.add(Text(task_description, style="red bold"))
+			task = task_dict[task_uuid]
+			real_id = uuid_to_real_id[task_uuid]  # Use real ID from Taskwarrior
 
-			# Recursively add dependent tasks
-			for dep_id in task['dependencies']:
-				add_task_to_tree(dep_id, task_branch)
+			task_description = task['description']
 
-		# Add tasks to the tree starting from those that are not anyone's dependency
-		for task_id in task_dict:
-			if not any(task_id in task_dict[dep_id]['dependencies'] for dep_id in task_dict):
-				add_task_to_tree(task_id, tree)
+			# Create a Text object with the task ID in red
+			task_id_text = Text(f"{real_id} ", style="red bold")
+			task_description_text = Text(task_description, style="white")
+			task_id_text.append(task_description_text)
+
+			# Handling due date and remaining time
+			due_date = task.get('due_date')
+			if due_date:
+				formatted_due_date = parse(due_date).strftime('%Y-%m-%d')
+				time_remaining, time_style = calculate_time_remaining(due_date, datetime.utcnow().replace(tzinfo=pytz.UTC))
+				if time_remaining:
+					due_info = f" {formatted_due_date} "
+					due_text = Text(due_info, style="blue")
+					time_remaining_text = Text(time_remaining, style=time_style)
+					due_text.append(time_remaining_text)
+					task_id_text.append(due_text)
+
+			# Add the combined text to the tree
+			task_branch = parent_branch.add(task_id_text)
+
+			annotations = task.get('annotations', [])
+			if annotations:
+				annotation_branch = task_branch.add(Text("⏲", style="white"))
+				for annotation in annotations:
+					# Parse the entry datetime string
+					entry_datetime = parse(annotation['entry'])
+
+					# If the parsed datetime is naive, attach the local timezone
+					if entry_datetime.tzinfo is None or entry_datetime.tzinfo.utcoffset(entry_datetime) is None:
+						entry_datetime = entry_datetime.replace(tzinfo=local_tz)
+					else:
+						# Convert the datetime to the local timezone
+						entry_datetime = entry_datetime.astimezone(local_tz)
+
+					# Format the datetime to string and append the description
+					annotation_text = Text(f"{entry_datetime.strftime('%Y-%m-%d %H:%M:%S')} - {annotation['description']}", style="yellow")
+					annotation_branch.add(annotation_text)
+
+
+			for dep_uuid in task['dependencies']:
+				add_task_to_tree(dep_uuid, task_branch)
+
+
+
+		for task_uuid in task_dict:
+			if not any(task_uuid in task_dict[dep_uuid]['dependencies'] for dep_uuid in task_dict):
+				add_task_to_tree(task_uuid, tree)
 
 		console.print(tree)
+
+
+	def calculate_time_remaining(due_date_str, now):
+		if due_date_str:
+			due_date = parse(due_date_str)
+			time_remaining = due_date - now
+			if time_remaining.total_seconds() >= 0:
+				time_style = "green"
+			else:
+				time_style = "red"
+
+			# Formatted string to include days, hours, and minutes
+			days = time_remaining.days
+			seconds = time_remaining.seconds
+			hours, remainder = divmod(seconds, 3600)
+			minutes = remainder // 60
+
+			if days or hours or minutes:
+				formatted_time = f"{days}d {hours}h {minutes}m" if days else f"{hours}h {minutes}m"
+			else:
+				formatted_time = "0m"  # Show 0 minutes if time remaining is very short
+
+			return formatted_time, time_style
+		return None  # Return None when no due date
+
+
 
 
 
