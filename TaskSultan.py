@@ -824,117 +824,90 @@ try:
 		
 		return output_lines  # Return the list of all processed projects
 
+
+
 	def project_summary(selected_item):
 		from rich import print
 		from rich.tree import Tree
 		from rich.text import Text
 		from rich.console import Console
-		from rich.color import Color
+		from datetime import datetime
+		import pytz
 
 		console = Console()
 		warrior = TaskWarrior()
 		tasks = warrior.load_tasks()
-
 		selected_project = selected_item
-		project_data = defaultdict(lambda: defaultdict(list))
+
+		task_dict = {}
 		now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+		all_tasks = {task['uuid']: task for task in tasks['pending']}
 
-		# Create a dictionary to store the dependencies
-		task_dependencies = {}
+		# Determine relevance of a task
+		def is_relevant(task):
+			project = task.get('project')
+			return project and (project == selected_project or project.startswith(selected_project + '.'))
 
-		for task in tasks['pending']:
-			annotations = task.get('annotations', [])
-			tags = task.get('tags', [])
-			description = task.get('description', '')
-			task_id = task.get('id', '')
-			due_date_str = task.get('due')
-			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
-			time_remaining = due_date - now if due_date else None
-			time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+		# Recursively add tasks to the dictionary if they are relevant or dependencies of a relevant task
+		def collect_tasks(task_id, visited=set()):
+			if task_id in visited or task_id not in all_tasks:
+				return
+			visited.add(task_id)
+			task = all_tasks[task_id]
 			dependencies = task.get('depends', [])
-			project = task.get('project', 'No Project')
-			task_uuid = task['uuid']
 
-			# Store the dependencies in the task_dependencies dictionary
-			for dependency in dependencies:
-				if dependency not in task_dependencies:
-					task_dependencies[dependency] = []
-				task_dependencies[dependency].append(task_uuid)
+			task_dict[task_id] = {
+				'project': task.get('project'),
+				'description': task.get('description', ''),
+				'due_date': task.get('due'),
+				'time_remaining': calculate_time_remaining(task.get('due'), now),
+				'annotations': task.get('annotations', []),
+				'tags': task.get('tags', []),
+				'dependencies': dependencies
+			}
 
-			data = [f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task_uuid, project, tags]
-			project_data[project]["All Tasks"].append(data)
+			# Recurse into dependencies regardless of their project
+			for dep_id in dependencies:
+				collect_tasks(dep_id, visited)
 
-		tree = Tree("Saikou", style="green bold")
+		# Helper to calculate time remaining
+		def calculate_time_remaining(due_date_str, now):
+			if due_date_str:
+				due_date = parse(due_date_str)
+				time_remaining = due_date - now
+				return str(time_remaining)[:-7]
+			return ''
 
-		for project, tag_data in project_data.items():
-			project_branch = tree.add(Text(project, style='cyan bold'))
+		# Collect all tasks under the selected project and their dependencies
+		for task_id, task in all_tasks.items():
+			if is_relevant(task):
+				collect_tasks(task_id)
 
-			tag_branch = project_branch.add(Text("All Tasks", style='blue bold'))
+		# Create a single tree for the selected project
+		tree = Tree(f"Project Summary: {selected_project}", style="green bold")
 
-			task_uuids_added = set()
-			for data in tag_data["All Tasks"]:
-				task_data = data[0]
-				task_id, description = (task_data.split(" ", 1) + [""])[: 2]
-				due_date = data[1] if len(data) > 1 else None
-				try:
-					due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
-				except ValueError:
-					due_date_formatted = ""
-				time_remaining = data[2] if len(data) > 2 else None
-				task_uuid = data[4]
-				project_name = data[5]
-				tags = data[6]
+		# Function to recursively add tasks to the tree
+		def add_task_to_tree(task_id, parent_branch):
+			if task_id not in task_dict:
+				return
+			task = task_dict[task_id]
+			task_description = f"{task_id} {task['description']}"
+			task_branch = parent_branch.add(Text(task_description, style="red bold"))
 
-				# If time_remaining exists, format with bold style
-				if time_remaining:
-					description_text = Text(description, style="white")
-				else:  # If not, just add color without bold style
-					description_text = Text(description, style="red")
-				task_id_text = Text(task_id, style="red bold")
-				due_date_text = Text(due_date_formatted, style="blue bold")
-				time_remaining_text = Text(time_remaining, style="green bold")
-				project_text = Text(f"[{project_name}]", style="magenta")
-				tags_text = Text(" ".join(tags), style="yellow")
+			# Recursively add dependent tasks
+			for dep_id in task['dependencies']:
+				add_task_to_tree(dep_id, task_branch)
 
-				# Create text line without adding it to tag_branch
-				text_line = task_id_text + Text(" ") + description_text + Text(" ") + due_date_text + Text(" ") + time_remaining_text + Text(" ") + project_text + Text(" ") + tags_text
-
-				# Add the task only if it hasn't been added before
-				if task_uuid not in task_uuids_added:
-					task_branch = tag_branch.add(text_line)
-					task_uuids_added.add(task_uuid)
-
-					# Add dependent tasks as children
-					def add_dependent_tasks(task_branch, dependencies, task_uuid, level=1):
-						for dependency in dependencies:
-							if dependency in task_dependencies:
-								for dependent_task_uuid in task_dependencies[dependency]:
-									if dependent_task_uuid not in task_uuids_added:
-										dependent_task = next((task for task in tasks['pending'] if task['uuid'] == dependent_task_uuid), None)
-										if dependent_task:
-											dependent_description = dependent_task.get('description', '')
-											dependent_project = dependent_task.get('project', 'No Project')
-											dependent_tags = dependent_task.get('tags', [])
-											level_text = f"{level}." if level > 1 else ""
-											dependent_text = Text(f"{level_text}{dependent_task_uuid} {dependent_description} [{dependent_project}] {' '.join(dependent_tags)}", style="yellow")
-											dependent_branch = task_branch.add(dependent_text)
-											task_uuids_added.add(dependent_task_uuid)
-											dep_dependencies = dependent_task.get('depends', [])
-											add_dependent_tasks(dependent_branch, dep_dependencies, dependent_task_uuid, level + 1)
-
-					add_dependent_tasks(task_branch, task_dependencies.get(task_uuid, []), task_uuid)
-
-					annotations = data[3] if len(data) > 3 else []
-					if annotations:
-						for annotation in annotations:
-							annotation_description = annotation.get('description', '')
-							annotation_entry = annotation.get('entry', '')
-							annotation_entry_date = datetime.strptime(annotation_entry, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d")
-							annotation_text = f"[magenta]{annotation_entry_date}[/magenta][yellow] {annotation_description}[/yellow]"
-							task_branch.add(annotation_text)
+		# Add tasks to the tree starting from those that are not anyone's dependency
+		for task_id in task_dict:
+			if not any(task_id in task_dict[dep_id]['dependencies'] for dep_id in task_dict):
+				add_task_to_tree(task_id, tree)
 
 		console.print(tree)
-		
+
+
+
+
 
 	def search_project(project_list):
 		# Load from SultanDB
