@@ -346,7 +346,7 @@ try:
 		print("Please enter the task command:")
 		print("Examples:")
 		print("'223,114,187 done' - Marks tasks 223, 114, and 187 as done.")
-		print(" The operation will be done without asking for confirmation!.")
+		print("!!!! The operation will be done without asking for confirmation!.")
 		print("To return to the main menu, press 'Enter'.\n")
 
 		while True:
@@ -1006,7 +1006,7 @@ try:
 
 				while True:  # Run until a non-refresh option is selected
 					# Ask the user if they want to update the project or refresh
-					action = questionary.select("What do you want to do next?", choices=["Refresh","Search another project","Handle tasks", "Update","Exit"]).ask()
+					action = questionary.select("What do you want to do next?", choices=["Refresh","Add new task","Set dependencies", "Remove dependencies","Search another project","Handle tasks", "Update metadata","Exit"]).ask()
 					
 					# CTRL+C actionx
 					action = "Exit" if action is None else action
@@ -1020,6 +1020,14 @@ try:
 						update_item(all_items, all_items.index(selected_item), file_path, specific_field, aors, projects)
 						view_data_with_tree(selected_item, tags,item_name) #refresh after updating the data
 						#break  # Break the loop after updating
+					elif action == "Add new task":
+						add_task_to_project(selected_item['name'])
+					elif action == "Set dependencies":
+						dependency_input = questionary.text("Enter the tasks and their dependencies in the format 'ID>ID>ID, ID>ID':\n").ask()
+						set_task_dependencies(dependency_input)
+					elif action == "Remove dependencies":
+						task_ids_input = questionary.text("Enter the IDs of the tasks to remove dependencies (comma-separated):\n").ask()
+						remove_task_dependencies(task_ids_input)
 					elif action == "Search another project":
 						call_and_process_task_projects()
 					elif action == "Handle tasks":
@@ -1032,6 +1040,85 @@ try:
 			else:
 				print("No project or AoR found with that name.")
 
+
+	def add_task_to_project(project_name):
+		task_description = questionary.text("Enter the description for the new task:").ask()
+		
+		# Create the task
+		create_command = f"task add proj:{project_name} '{task_description}'"
+		execute_task_command(create_command)
+		
+		# Retrieve the ID of the newly created task
+		task_id = get_latest_task_id()
+
+		# Ask about dependencies
+		has_dependencies = questionary.confirm("Does this task have dependencies?").ask()
+
+		if has_dependencies:
+			dependency_type = questionary.select(
+				"Is this a blocking task (secondary) or does it have dependent tasks (primary)?",
+				choices=["Secondary task", "Primary task"]
+			).ask()
+
+			if dependency_type == "Secondary task":
+				blocking_task_id = questionary.text("Enter the ID of the task this is a sub-task of:").ask()
+				modify_command = f"task {blocking_task_id} modify depends:{task_id}"
+				execute_task_command(modify_command)
+				print(f"Task {task_id} is now a sub-task of {blocking_task_id}.")
+			elif dependency_type == "Primary task":
+				dependent_task_ids = questionary.text("Enter the IDs of the tasks that depend on this (comma-separated):").ask()
+				modify_dependent_tasks(task_id,dependent_task_ids)
+
+	def get_latest_task_id():
+		export_command = "task +LATEST export"
+		try:
+			proc = subprocess.run(export_command, shell=True, text=True, capture_output=True)
+			if proc.stdout:
+				tasks = json.loads(proc.stdout)
+				if tasks:
+					return str(tasks[0]['id'])
+			if proc.stderr:
+				print(proc.stderr)
+		except Exception as e:
+			print(f"An error occurred while exporting the latest task: {e}")
+		return None
+
+	def execute_task_command(command):
+		try:
+			proc = subprocess.run(command, shell=True, text=True, capture_output=True)
+			if proc.stdout:
+				print(proc.stdout)
+			if proc.stderr:
+				print(proc.stderr)
+		except Exception as e:
+			print(f"An error occurred while executing the task command: {e}")
+
+	def modify_dependent_tasks(dependent_ids, task_id):
+		ids = dependent_ids.split(',')
+		for id in ids:
+			modify_command = f"task {id.strip()} modify depends:{task_id}"
+			execute_task_command(modify_command)
+			print(f"Task {task_id} now depends on task {id.strip()}.")
+
+	def set_task_dependencies(dependency_input):
+		chains = dependency_input.split(',')
+		for chain in chains:
+			tasks = chain.split('>')
+			# Reverse to set up each as blocking the previous
+			tasks.reverse()
+			for i in range(len(tasks) - 1):
+				dependent_id = tasks[i].strip()
+				task_id = tasks[i + 1].strip()
+				modify_command = f"task {task_id} modify depends:{dependent_id}"
+				execute_task_command(modify_command)
+				print(f"Task {dependent_id} now depends on task {task_id}.")
+
+	def remove_task_dependencies(task_ids_input):
+		ids = task_ids_input.split(',')
+		for id in ids:
+			modify_command = f"task {id.strip()} modify depends:"
+			execute_task_command(modify_command)
+			print(f"Dependencies removed from task {id.strip()}.")
 
 	def interactive_prompt(file_path):
 		# Load from SultanDB
