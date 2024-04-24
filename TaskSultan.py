@@ -843,8 +843,6 @@ try:
 		task_dict = {}
 		now = datetime.utcnow().replace(tzinfo=pytz.UTC)
 		all_tasks = {task['uuid']: task for task in tasks['pending']}
-
-		# Ensure to use 'id' from Taskwarrior's task structure
 		uuid_to_real_id = {task['uuid']: task['id'] for task in tasks['pending']}
 
 		def is_relevant(task):
@@ -876,61 +874,53 @@ try:
 				collect_tasks(task_uuid)
 
 		tree = Tree(f"Project Summary: {selected_project}", style="green bold")
-
-		# Get the current local timezone
 		local_tz = datetime.now().astimezone().tzinfo
-		
+
 		def add_task_to_tree(task_uuid, parent_branch):
 			if task_uuid not in task_dict:
 				return
 			task = task_dict[task_uuid]
-			real_id = uuid_to_real_id[task_uuid]  # Use real ID from Taskwarrior
-
+			real_id = uuid_to_real_id[task_uuid]
 			task_description = task['description']
-
-			# Create a Text object with the task ID in red
-			task_id_text = Text(f"{real_id} ", style="red bold")
-			task_description_text = Text(task_description, style="white")
+			task_id_text = Text(f"[{real_id}] ", style="yellow")
+			task_description_text = Text(task_description, style="cyan")
 			task_id_text.append(task_description_text)
 
-			# Handling due date and remaining time
 			due_date = task.get('due_date')
 			if due_date:
 				formatted_due_date = parse(due_date).strftime('%Y-%m-%d')
-				time_remaining, time_style = calculate_time_remaining(due_date, datetime.utcnow().replace(tzinfo=pytz.UTC))
-				if time_remaining:
-					due_info = f" {formatted_due_date} "
-					due_text = Text(due_info, style="blue")
-					time_remaining_text = Text(time_remaining, style=time_style)
-					due_text.append(time_remaining_text)
-					task_id_text.append(due_text)
+				time_remaining, time_style = calculate_time_remaining(due_date, now)
+				due_text = Text(f" {formatted_due_date} ", style="blue")
+				time_remaining_text = Text(time_remaining, style=time_style)
+				due_text.append(time_remaining_text)
+				task_id_text.append(due_text)
 
-			# Add the combined text to the tree
+			# Display tags in red bold
+			if task.get('tags'):
+				tags_text = Text(f" +{', '.join(task['tags'])} ", style="bold red")
+				task_id_text.append(tags_text)
+
+			# Display project in blue bold if different from the selected or if no project is assigned
+			if task.get('project') != selected_project:
+				project_text = Text(f" Project: {task.get('project', 'No Project')} ", style="bold blue")
+				task_id_text.append(project_text)
+
 			task_branch = parent_branch.add(task_id_text)
 
 			annotations = task.get('annotations', [])
 			if annotations:
-				annotation_branch = task_branch.add(Text("⏲", style="white"))
+				annotation_branch = task_branch.add(Text("Annotations:", style="white"))
 				for annotation in annotations:
-					# Parse the entry datetime string
 					entry_datetime = parse(annotation['entry'])
-
-					# If the parsed datetime is naive, attach the local timezone
 					if entry_datetime.tzinfo is None or entry_datetime.tzinfo.utcoffset(entry_datetime) is None:
 						entry_datetime = entry_datetime.replace(tzinfo=local_tz)
 					else:
-						# Convert the datetime to the local timezone
 						entry_datetime = entry_datetime.astimezone(local_tz)
-
-					# Format the datetime to string and append the description
 					annotation_text = Text(f"{entry_datetime.strftime('%Y-%m-%d %H:%M:%S')} - {annotation['description']}", style="yellow")
 					annotation_branch.add(annotation_text)
 
-
 			for dep_uuid in task['dependencies']:
 				add_task_to_tree(dep_uuid, task_branch)
-
-
 
 		for task_uuid in task_dict:
 			if not any(task_uuid in task_dict[dep_uuid]['dependencies'] for dep_uuid in task_dict):
