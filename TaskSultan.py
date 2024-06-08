@@ -902,7 +902,7 @@ try:
 
 			# Display project in blue bold if different from the selected or if no project is assigned
 			if task.get('project') != selected_project:
-				project_text = Text(f" Project: {task.get('project', 'No Project')} ", style="bold blue")
+				project_text = Text(f" Project: {task.get('project', 'No Project')} ", style="bold magenta")
 				task_id_text.append(project_text)
 
 			task_branch = parent_branch.add(task_id_text)
@@ -2068,15 +2068,17 @@ try:
 
 
 	def eisenhower():
+		delimiter = '=' * 30
 		try:
 			filter_query = input(Fore.CYAN + "Enter your Taskwarrior filter:\n ")
 
-			fork = input ("Do you want to asses priority (pri) or process (pro) the tasks?\n" + Fore.RED)
+			fork = input ("Do you want to asses priority (i) or process (o) the tasks?\n" + Fore.RED)
 
-			if fork == "pri":
+			if fork == "i":
 				tasks = get_tasks(filter_query)
 
 				for task in tasks:
+					print(delimiter)
 					display_task_details(task['uuid'])
 					print(Fore.CYAN + f"\nProcessing task: {task['description']}")
 					response = ask_questions()
@@ -2098,7 +2100,7 @@ try:
 					update_command = f"task {task['uuid']} modify value:{value}"
 					run_taskwarrior_command(update_command)
 					print(Fore.GREEN + f"Updated task with value: {value}")
-			elif fork == "pro":
+			elif fork == "o":
 				tasks = get_inbox_tasks(filter_query)
 				for task in tasks:
 					process_task(task)
@@ -2127,7 +2129,7 @@ try:
 
 	def ask_question(question):
 		while True:
-			response = input(question + Fore.WHITE + " (0-5, 'skip', 'done', 'del'): ").strip().lower()
+			response = input(question + Fore.WHITE + " (0-5, 'skip', 'done', 'del'): \n:=> ").strip().lower()
 			if response in ['skip', 'done', 'del']:
 				return response
 			try:
@@ -2146,13 +2148,13 @@ try:
 	def ask_questions():
 		print(Fore.RED + "\nAssessing Importance:")
 		imp_questions = [
-		Fore.BLUE + "Impact on Objectives: How will completing this task impact my short-term and long-term objectives or goals?",
-		Fore.GREEN +  "Consequences of Neglect: What are the consequences if this task is not completed?",
-		Fore.CYAN +  "Value Addition: How much value does completing this task add to my project or overall work?",
-		Fore.WHITE +  "Stakeholder Expectations: Are there any stakeholders (like a boss, client, or team) who consider this task critical?",
-		Fore.YELLOW +  "Development Opportunities: Does this task offer any opportunities for personal or professional growth?",
-		Fore.MAGENTA + "Regret Minimization: In 20 years, will I regret not doing this?"
-		]
+		Fore.BLUE + "Impact on Objectives: How will completing this task impact my short-term and long-term objectives or goals?\n0 - No impact.\n1 - Negligible/Uncertain\n2 - Small impact.\n3 - Medium impact.\n4 - High impact.\n5 - Critical\n",
+    Fore.GREEN +  "Consequences of Neglect: What are the consequences if this task is not completed?\n0 - No consequences.\n1 - Minor inconvenience.\n2 - Moderate inconvenience.\n3 - Significant inconvenience.\n4 - Major issue.\n5 - Catastrophic consequences.\n",
+    Fore.CYAN +  "Value Addition: How much value does completing this task add to my project or overall work?\n0 - No value.\n1 - Little value.\n2 - Some value.\n3 - Considerable value.\n4 - High value.\n5 - Exceptional value.\n",
+    Fore.WHITE +  "Stakeholder Expectations: Are there any stakeholders (like a boss, client, or team) who consider this task critical?\n0 - No stakeholders.\n1 - Low importance to stakeholders.\n2 - Some importance to stakeholders.\n3 - Important to some stakeholders.\n4 - Important to many stakeholders.\n5 - Critical to key stakeholders.\n",
+    Fore.YELLOW +  "Development Opportunities: Does this task offer any opportunities for personal or professional growth?\n0 - No growth opportunities.\n1 - Very little growth.\n2 - Some growth.\n3 - Moderate growth.\n4 - Significant growth.\n5 - Exceptional growth.\n",
+    Fore.MAGENTA + "Regret Minimization: In 20 years, will I regret not doing this?\n0 - No regret.\n1 - Very little regret.\n2 - Some regret.\n3 - Moderate regret.\n4 - Significant regret.\n5 - Extreme regret.\n"
+    ]
 
 		importance_scores = []
 		for q in imp_questions:
@@ -2163,11 +2165,12 @@ try:
 
 		print(Fore.RED + "\nAssessing Urgency:")
 		urg_questions = [
-		Fore.RED + "Deadlines: Is there a fixed deadline for this task, and how soon is it?",
-		Fore.CYAN + "Dependency: Are other tasks or people dependent on the completion of this task?","Time Sensitivity: Will the task become more difficult or impossible if not done soon?",
-		Fore.WHITE + "Risk of Delay: What are the risks or costs associated with delaying this task?",
-		Fore.YELLOW + "Immediate Benefit: Is there an immediate benefit or relief from completing this task quickly?"
-		]
+		Fore.RED + "Deadlines: Is there a fixed deadline for this task, and how soon is it?\n0 - No deadline.\n1 - Far in the future.\n2 - Somewhat distant.\n3 - Approaching soon.\n4 - Imminent.\n5 - Immediate.\n",
+    Fore.CYAN + "Dependency: Are other tasks or people dependent on the completion of this task?\n0 - No dependency.\n1 - Very low dependency.\n2 - Low dependency.\n3 - Moderate dependency.\n4 - High dependency.\n5 - Critical dependency.\n",
+    Fore.BLUE + "Time Sensitivity: Will the task become more difficult or impossible if not done soon?\n0 - Not time-sensitive.\n1 - Very low sensitivity.\n2 - Low sensitivity.\n3 - Moderate sensitivity.\n4 - High sensitivity.\n5 - Extremely time-sensitive.\n",
+    Fore.WHITE + "Risk of Delay: What are the risks or costs associated with delaying this task?\n0 - No risks.\n1 - Very low risk.\n2 - Low risk.\n3 - Moderate risk.\n4 - High risk.\n5 - Extreme risk.\n",
+    Fore.YELLOW + "Immediate Benefit: Is there an immediate benefit or relief from completing this task quickly?\n0 - No immediate benefit.\n1 - Very little benefit.\n2 - Some benefit.\n3 - Considerable benefit.\n4 - High benefit.\n5 - Exceptional benefit.\n"
+    ]
 
 		urgency_scores = []
 		for q in urg_questions:
