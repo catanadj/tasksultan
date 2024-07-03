@@ -26,6 +26,7 @@ import pandas as pd
 from fuzzywuzzy import process
 
 
+
 def main():
 	# Map each command to its corresponding function
 	command_to_function = {
@@ -37,11 +38,12 @@ def main():
 		'i': display_inbox_tasks,
 		'tl': display_due_tasks,
 		'ht': handle_task,
+		'tc': task_control_center,
 		'td': print_tasks_for_selected_day,
 		'sp': call_and_process_task_projects,
 		'o' : display_overdue_tasks,
 		'rr': recurrent_report,
-		'z': eisenhower
+		'z': eisenhower,
 	}
 	
 	parser = argparse.ArgumentParser(description='Process some commands.')
@@ -348,34 +350,15 @@ try:
 		print("'223,114,187 done' - Marks tasks 223, 114, and 187 as done.")
 		print("!!!! The operation will be done without asking for confirmation!.")
 		print("To return to the main menu, press 'Enter'.\n")
+		print("----------------------------------------------\n")
 
 		while True:
 			task_command = input()
 			if task_command.lower() == '':
 				return
 			else:
-				# Assuming `execute_task_command` is a function that passes the command to TaskWarrior
-				execute_task_command(task_command)
+				subprocess.run(f"yes | task {task_command}",shell=True)
 
-	def execute_task_command(task_command):
-		command = 'yes | task ' + task_command
-
-		try:
-			with subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
-				try:
-					stdout, stderr = proc.communicate(timeout=10)
-				except subprocess.TimeoutExpired:
-					print("Command timed out.")
-					proc.kill()
-					stdout, stderr = proc.communicate()
-
-				if stdout:
-					print(stdout)
-				if stderr:
-					print(stderr)
-
-		except Exception as e:
-			print(f"An error occurred while executing the task command: {e}")
 
 	def display_due_tasks():
 		warrior = TaskWarrior()
@@ -990,18 +973,31 @@ try:
 
 			# Run the project_summary with the selected project
 			if selected_item:
-				print(f"Name: {selected_item['name']}")
+				print(f"Dependency list for: {item_name}")
 				tags=get_tags_for_item(selected_item['name'])
 				view_data_with_tree(selected_item, tags,item_name)
 
 				while True:  # Run until a non-refresh option is selected
 					# Ask the user if they want to update the project or refresh
-					action = questionary.select("What do you want to do next?", choices=["Refresh","Add new task","Set dependencies", "Remove dependencies","Search another project","Handle tasks", "Update metadata","Exit"]).ask()
-					
+					action = questionary.select(
+												"What do you want to do next?",
+												choices=[
+													"Refresh",
+													"Display tree",
+													"Add new task",
+													"Set dependencies",
+													"Remove dependencies",
+													"Search another project",
+													"Handle tasks",
+													"Update metadata",
+													"Exit"
+												]
+											).ask()
+
 					# CTRL+C actionx
 					action = "Exit" if action is None else action
 
-					if action == "Update":
+					if action == "Update metadata":
 						if item_name.startswith("AoR."):
 							specific_field = "standard"
 						else:
@@ -1011,25 +1007,31 @@ try:
 						view_data_with_tree(selected_item, tags,item_name) #refresh after updating the data
 						#break  # Break the loop after updating
 					elif action == "Add new task":
-						add_task_to_project(selected_item['name'])
+						add_task_to_project(item_name)
+						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
 					elif action == "Set dependencies":
 						dependency_input = questionary.text("Enter the tasks and their dependencies in the format 'ID>ID>ID, ID>ID':\n").ask()
 						set_task_dependencies(dependency_input)
+						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
 					elif action == "Remove dependencies":
 						task_ids_input = questionary.text("Enter the IDs of the tasks to remove dependencies (comma-separated):\n").ask()
 						remove_task_dependencies(task_ids_input)
+						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
 					elif action == "Search another project":
 						call_and_process_task_projects()
 					elif action == "Handle tasks":
 						handle_task()
+						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
 					elif action == "Refresh":
 						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
 					elif action == "Exit":
 						print("Exit")
 						break
+					elif action == "Display tree":
+						display_tasks(f"task pro:{item_name} +PENDING export")
 			else:
 				print("No project or AoR found with that name.")
-
+# x_x
 
 	def add_task_to_project(project_name):
 		task_description = questionary.text("Enter the description for the new task:").ask()
@@ -1119,20 +1121,18 @@ try:
 			aors, projects,file_path)
 
 		commands = {
-			'ua': ('Update AoRs', ''),
-			'up': ('Update Projects', ''),
-			'e': ('Exit', ''),
-			's': ('Search', ''),
-			'c': ('Clear Data', ''),
-			'b': ('Basic summary', ''),
-			'd': ('Detailed summary', ''),
-			'i': ('Inbox', ''),
-			'tl': ('Task list', ''),
-			'ht': ('Handle Task', ''),
-			'td': ('Daily tasks',''),
-			'o' : ('Overdue tasks list',''),
-			'rr': ('Recurrent tasks report',''),
-			'z': ('Process or Value assignment','')
+			'ua': ('Update AoRs', '⟳'),
+			'up': ('Update Projects', '🗓️'),
+			'e': ('Exit', '⇒'),
+			's': ('Search', '🔍'),
+			'c': ('Clear Data', '✖'),
+			'b': ('Basic summary', '☰'),
+			'd': ('Detailed summary', '☷'),
+			'tc': ('Task centre', '⌖'),
+			'ht': ('Handle Task', '🔧'),
+			'td': ('Daily tasks', '✓'),
+			'rr': ('Recurrent tasks report', '↻'),
+			'z': ('Process or Value assignment', '⚙')
 		}
 
 		custom_style = Style([
@@ -1305,7 +1305,7 @@ try:
 						view_data(selected_project, project_tags)
 			elif command == 'Search':
 				search_commands = ['Search Data',
-								   'Deep dive projects', 'Search Task', 'Back']
+								   'Search Project', 'Search Task', 'Back']
 				search_command = questionary.select(
 					"Please select a search command",
 					choices=search_commands,
@@ -1313,8 +1313,8 @@ try:
 				).ask()
 				if search_command == 'Search Data':
 					search_data(aors, projects)
-				elif command == 'Deep dive projects':
-					search_project()
+				elif command == 'Search Project':
+					call_and_process_task_projects()
 				elif search_command == 'Search Task':
 					search_task()
 			elif command == 'View Data':
@@ -1367,6 +1367,8 @@ try:
 				recurrent_report()
 			elif command == 'Process or Value assignment':
 				eisenhower()
+			elif command == 'Task centre':
+				task_control_center()
 
 
 
@@ -2334,6 +2336,129 @@ try:
 			print(Fore.GREEN + f"Marked = {task['uuid']} = as done.")
 
 			# =========================================================
+
+	def parse_datetime(due_date_str):
+		try:
+			return datetime.strptime(due_date_str, "%Y%m%dT%H%M%SZ") if due_date_str else None
+		except ValueError:
+			return None
+
+	def display_tasks(command):
+		from rich.tree import Tree
+		from rich.text import Text
+		from rich.console import Console
+		from collections import defaultdict
+		import sys
+		result = subprocess.run(command, shell=True, capture_output=True, text=True)
+		console = Console()
+
+		if result.stdout:
+			tasks = json.loads(result.stdout)
+			project_tag_map = defaultdict(lambda: defaultdict(list))
+
+			for task in tasks:
+				project = task.get('project', 'No Project')
+				tags = task.get('tags', ['No Tag'])
+				description = task['description']
+				task_id = str(task['id'])  # Convert to string
+				due_date_str = task.get('due')
+				due_date = parse_datetime(due_date_str)
+
+				for tag in tags:
+					project_tag_map[project][tag].append((task_id, description, due_date))
+
+			tree = Tree("Task Overview", style="green bold")
+
+			for project, tags in project_tag_map.items():
+				project_levels = project.split(".")
+				current_branch = tree
+
+				for level in project_levels:
+					found = False
+					for child in current_branch.children:
+						if child.label.plain == level:
+							current_branch = child
+							found = True
+							break
+					if not found:
+						current_branch = current_branch.add(Text(level, style="yellow bold"))
+
+				for tag, tasks in tags.items():
+					tasks_sorted = sorted(tasks, key=lambda x: (x[2] is None, x[2]))
+					tag_branch = current_branch.add(Text(tag, style="blue bold"))
+
+					for task_id, description, due_date in tasks_sorted:
+						task_id_text = Text(task_id, style="red bold")
+						description_text = Text(description, style="white")
+						due_date_text = Text(due_date.strftime("%Y-%m-%d") if due_date else "", style="green bold")
+						tag_branch.add(task_id_text + Text(" ") + description_text + Text(" ") + due_date_text)
+
+			console.print(tree)
+		else:
+			console.print("No tasks found.")
+
+	from rich.console import Console
+	from rich.table import Table
+	from rich.prompt import Prompt
+
+	def display_menu(console):
+
+		# console = Console()
+		table = Table(show_header=True, header_style="bold yellow")
+		table.add_column("Key", style="dim", width=2)
+		table.add_column("Action", min_width=20)
+		table.add_row("", "Today's Tasks")
+		table.add_row("y", "Yesterday's Tasks")
+		table.add_row("t", "Tomorrow's Tasks")
+		table.add_row("w", "Current Week's Tasks")
+		table.add_row("m", "Current Month's Tasks")
+		table.add_row("l", "View Long-Term Plan")
+		table.add_row("o", "Overdue Tasks")
+		table.add_row("i", "Inbox Tasks")
+		table.add_row("h", "Handle Tasks")
+		table.add_row("b", "Back to main")
+		table.add_row("e", "Exit")
+
+		console.print(table)
+
+	def task_control_center():
+		console = Console()
+		while True:
+			console.print("[bold cyan]Task Control Center[/bold cyan]", justify="center")
+			display_menu(console)
+			choice = Prompt.ask("[bold yellow]Enter your choice[/bold yellow]")
+			scope_command_map = {
+				'': "task due:today +PENDING export",
+				'y': "task due:yest +PENDING export",
+				't': "task due:tomo +PENDING export",
+				'w': "task +WEEK +PENDING export",
+				'm': "task +MONTH +PENDING export",
+			}
+
+			if choice in scope_command_map:
+				console.clear()
+				display_tasks(scope_command_map[choice])
+			elif choice == 'l':
+				console.clear()
+				display_due_tasks()
+			elif choice == 'o':
+				console.clear()
+				display_overdue_tasks()
+				console.clear()
+			elif choice == 'i':
+				console.clear()
+				display_inbox_tasks()
+			elif choice == 'h':
+				handle_task()
+			elif choice == 'b':
+				script_directory = os.path.dirname(os.path.abspath(__file__))
+				file_path = os.path.join(script_directory, "sultandb.json")
+				interactive_prompt(file_path)
+			elif choice == 'e':
+				console.clear()
+				break
+			else:
+				console.print("Invalid choice. Please try again.", style="bold red")
 
 
 
