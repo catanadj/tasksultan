@@ -65,7 +65,7 @@ def main():
 
 
 try:
-	delimiter = ("=" * 30)
+	
 
 	def print_calendar_with_marked_day(year, month, day):
 			cal = calendar.TextCalendar(firstweekday=calendar.MONDAY)
@@ -322,7 +322,7 @@ try:
 	def display_inbox_tasks():
 		warrior = TaskWarrior()
 		tasks = warrior.load_tasks()['pending']
-		delimiter = ('=' * 60)
+		delimiter = ('-' * 40)
 		# Filter tasks with the tag "in"
 		inbox_tasks = [task for task in tasks if 'in' in task.get('tags', [])]
 
@@ -483,6 +483,7 @@ try:
 			if project and (project == item_name or project.startswith("AoR." + item_name)):
 				created = task.get('entry')
 				if created:
+					print(datetime.strptime(created, "%Y%m%dT%H%M%SZ"))
 					return datetime.strptime(created, "%Y%m%dT%H%M%SZ")
 
 		return None
@@ -623,22 +624,34 @@ try:
 					f" - {Fore.YELLOW}{timestamp}{Fore.RESET}: {Fore.YELLOW}{content}{Fore.RESET}")
 
 
+	def execute_taskwarrior_command(command):
+		"""Execute a TaskWarrior command and return its output."""
+		try:
+			proc = subprocess.run(command, shell=True, text=True, capture_output=True)
+			if proc.stdout:
+				return proc.stdout.strip()  # Remove extra whitespace
+			if proc.stderr:
+				print(f"Error: {proc.stderr}")
+		except Exception as e:
+			print(f"An error occurred while executing the TaskWarrior command: {e}")
+		return ""
+
+	def get_task_count(item_name, status):
+		"""Get the count of tasks by status for a specific project."""
+		command = f"task count project:{item_name} status:{status}"
+		return int(execute_taskwarrior_command(command))
+
 	def view_data_with_tree(item, tags,item_name):
 		print(f"{Fore.BLUE}Name: {Fore.YELLOW}{item['name']}{Fore.RESET}")
 		print(
 			f"{Fore.BLUE}Description: {Fore.YELLOW}{item.get('description', '')}{Fore.RESET}")
 
-		# Get the number of pending tasks
-		pending_tasks = 0
-		for tag, count in tags.items():
-			if tag != 'Completed':
-				pending_tasks += count
+		pending_tasks = get_task_count(item_name, 'pending')
+		completed_tasks = get_task_count(item_name, 'completed')
+		deleted_tasks = get_task_count(item_name, 'deleted')
 
-		# Get the number of completed tasks
-		completed_tasks = tags.get('Completed', 0)
-
-		print(f"{Fore.BLUE}Pending: {Fore.YELLOW}{pending_tasks}{Fore.RESET} | "
-			  f"{Fore.BLUE}Completed: {Fore.YELLOW}{completed_tasks}{Fore.RESET}")
+		print(f"{Fore.YELLOW}Pending: {Fore.YELLOW}{pending_tasks}{Fore.RESET} | {Fore.YELLOW}Completed: {Fore.GREEN}{completed_tasks}{Fore.RESET} | {Fore.YELLOW}Deleted: {Fore.BLUE}{deleted_tasks}{Fore.RESET}")
+			  
 		print(delimiter)
 		if 'standard' in item:
 			field_name = "Standard" if 'outcome' not in item else "Outcome"
@@ -979,6 +992,7 @@ try:
 
 				while True:  # Run until a non-refresh option is selected
 					# Ask the user if they want to update the project or refresh
+					print("\n\n\n" + "-:" * 40)
 					action = questionary.select(
 												"What do you want to do next?",
 												choices=[
@@ -993,7 +1007,7 @@ try:
 													"Exit"
 												]
 											).ask()
-
+					print("-:" * 40)
 					# CTRL+C actionx
 					action = "Exit" if action is None else action
 
@@ -1036,8 +1050,9 @@ try:
 	def add_task_to_project(project_name):
 		task_description = questionary.text("Enter the description for the new task:").ask()
 		
-		# Create the task
-		create_command = f"task add proj:{project_name} '{task_description}'"
+		# Create the task ensuring the entire input is treated as a single argument
+		# by wrapping it in single quotes to handle special characters like + for tags
+		create_command = f"task add proj:{project_name} {task_description}"
 		execute_task_command(create_command)
 		
 		# Retrieve the ID of the newly created task
@@ -1130,6 +1145,7 @@ try:
 			'd': ('Detailed summary', '☷'),
 			'tc': ('Task centre', '⌖'),
 			'ht': ('Handle Task', '🔧'),
+			'o' : ('Overdue tasks list','Δ'),
 			'td': ('Daily tasks', '✓'),
 			'rr': ('Recurrent tasks report', '↻'),
 			'z': ('Process or Value assignment', '⚙')
@@ -2407,7 +2423,7 @@ try:
 		table = Table(show_header=True, header_style="bold yellow")
 		table.add_column("Key", style="dim", width=2)
 		table.add_column("Action", min_width=20)
-		table.add_row("", "Today's Tasks")
+		table.add_row("d", "Today's Tasks")
 		table.add_row("y", "Yesterday's Tasks")
 		table.add_row("t", "Tomorrow's Tasks")
 		table.add_row("w", "Current Week's Tasks")
@@ -2417,7 +2433,7 @@ try:
 		table.add_row("i", "Inbox Tasks")
 		table.add_row("h", "Handle Tasks")
 		table.add_row("b", "Back to main")
-		table.add_row("e", "Exit")
+		table.add_row("", "Exit")
 
 		console.print(table)
 
@@ -2428,11 +2444,12 @@ try:
 			display_menu(console)
 			choice = Prompt.ask("[bold yellow]Enter your choice[/bold yellow]")
 			scope_command_map = {
-				'': "task due:today +PENDING export",
+				'd': "task due:today +PENDING export",
 				'y': "task due:yest +PENDING export",
 				't': "task due:tomo +PENDING export",
 				'w': "task +WEEK +PENDING export",
 				'm': "task +MONTH +PENDING export",
+				'o': "task +OVERDUE +PENDING export"
 			}
 
 			if choice in scope_command_map:
@@ -2441,10 +2458,6 @@ try:
 			elif choice == 'l':
 				console.clear()
 				display_due_tasks()
-			elif choice == 'o':
-				console.clear()
-				display_overdue_tasks()
-				console.clear()
 			elif choice == 'i':
 				console.clear()
 				display_inbox_tasks()
@@ -2454,7 +2467,7 @@ try:
 				script_directory = os.path.dirname(os.path.abspath(__file__))
 				file_path = os.path.join(script_directory, "sultandb.json")
 				interactive_prompt(file_path)
-			elif choice == 'e':
+			elif choice == '':
 				console.clear()
 				break
 			else:
@@ -2465,7 +2478,7 @@ try:
 
 # ==================
 
-
+	delimiter = ('-' * 40)
 	if __name__ == "__main__":
 		main()
 		
