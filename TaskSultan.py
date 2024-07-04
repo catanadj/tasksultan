@@ -869,7 +869,7 @@ try:
 			if is_relevant(task):
 				collect_tasks(task_uuid)
 
-		tree = Tree(f"Project Summary: {selected_project}", style="green bold")
+		tree = Tree(f"Dependency Tree: {selected_project}", style="green")
 		local_tz = datetime.now().astimezone().tzinfo
 
 		def add_task_to_tree(task_uuid, parent_branch):
@@ -898,21 +898,21 @@ try:
 
 			# Display project in blue bold if different from the selected or if no project is assigned
 			if task.get('project') != selected_project:
-				project_text = Text(f" {task.get('project', 'No Project')} ", style="bold magenta")
+				project_text = Text(f" {task.get('project', 'No Project')} ", style="magenta")
 				task_id_text.append(project_text)
 
 			task_branch = parent_branch.add(task_id_text)
 
 			annotations = task.get('annotations', [])
 			if annotations:
-				annotation_branch = task_branch.add(Text("Annotations:", style="bold white"))
+				annotation_branch = task_branch.add(Text("Annotations:", style="white"))
 				for annotation in annotations:
 					entry_datetime = parse(annotation['entry'])
 					if entry_datetime.tzinfo is None or entry_datetime.tzinfo.utcoffset(entry_datetime) is None:
 						entry_datetime = entry_datetime.replace(tzinfo=local_tz)
 					else:
 						entry_datetime = entry_datetime.astimezone(local_tz)
-					annotation_text = Text(f"{entry_datetime.strftime('%Y-%m-%d %H:%M:%S')} - {annotation['description']}", style="white")
+					annotation_text = Text(f"{entry_datetime.strftime('%Y-%m-%d %H:%M:%S')} - {annotation['description']}", style="dim white")
 					annotation_branch.add(annotation_text)
 
 			for dep_uuid in task['dependencies']:
@@ -2368,14 +2368,13 @@ try:
 		from rich.console import Console
 		from collections import defaultdict
 		import sys
-
 		result = subprocess.run(command, shell=True, capture_output=True, text=True)
 		console = Console()
 
 		if result.stdout:
 			tasks = json.loads(result.stdout)
 			if not tasks:
-				console.print("No tasks found.")
+				console.print("No tasks found.", style="bold red")
 				return
 
 			project_tag_map = defaultdict(lambda: defaultdict(list))
@@ -2389,13 +2388,11 @@ try:
 				due_date = parse_datetime(due_date_str)
 				annotations = task.get('annotations', [])
 
-				if project != 'No Project' or tags != ['No Tag']:
-					for tag in tags:
-						project_tag_map[project][tag].append((task_id, description, due_date, annotations))
+				for tag in tags:
+					project_tag_map[project][tag].append((task_id, description, due_date, annotations))
 
-			tree = Tree("Task Overview", style="green bold")
+			tree = Tree("Task Overview", style="green")
 
-			# Build tree structure
 			for project, tags in project_tag_map.items():
 				if project == 'No Project' and not any(tags.values()):
 					continue
@@ -2404,37 +2401,43 @@ try:
 				current_branch = tree
 
 				for level in project_levels:
-					# Check if level branch already exists
-					new_branch = None
+					# Adding or finding the branch for each project level
+					found_branch = None
 					for child in current_branch.children:
 						if child.label.plain == level:
-							new_branch = child
+							found_branch = child
 							break
-					if not new_branch:
-						new_branch = current_branch.add(Text(level, style="yellow bold"))
-					current_branch = new_branch
+					if not found_branch:
+						found_branch = current_branch.add(Text(level, style="yellow"))
+					current_branch = found_branch
 
 				for tag, tasks in tags.items():
 					if not tasks:
 						continue
-					tag_branch = current_branch.add(Text(tag, style="blue bold"))
+					tag_branch = current_branch.add(Text(tag, style="blue"))
+
+
 					for task_id, description, due_date, annotations in sorted(tasks, key=lambda x: (x[2] is None, x[2])):
-						task_id_text = Text(task_id, style="red bold")
-						description_text = Text(description, style="white")
-						due_date_text = Text(due_date.strftime("%Y-%m-%d") if due_date else "", style="green bold")
-						task_line = task_id_text + Text(" ") + description_text + Text(" ") + due_date_text
+						# Task ID in red with square brackets
+						task_id_text = Text(f"[{task_id}] ", style="red")
+						# Description in white
+						description_text = Text(description + " ", style="white")
+						# Due date in green
+						due_date_text = Text(due_date.strftime("%Y-%m-%d") if due_date else "", style="green")
+						# Combine texts for one line
+						task_line = task_id_text + description_text + due_date_text
 						task_branch = tag_branch.add(task_line)
 
 						if annotations:
-							annotation_branch = task_branch.add(Text("Annotations:", style="bold white"))
+							annotation_branch = task_branch.add(Text("Annotations:", style="italic white"))
 							for annotation in annotations:
 								entry_datetime = datetime.strptime(annotation['entry'], "%Y%m%dT%H%M%SZ").strftime('%Y-%m-%d %H:%M:%S')
-								annotation_text = Text(f"{entry_datetime} - {annotation['description']}", style="white")
+								annotation_text = Text(f"{entry_datetime} - {annotation['description']}", style="dim white")
 								annotation_branch.add(annotation_text)
 
 			console.print(tree)
 		else:
-			console.print("No tasks found.")
+			console.print("No tasks found.", style="bold red")
 
 	from rich.console import Console
 	from rich.table import Table
