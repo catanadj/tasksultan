@@ -878,8 +878,8 @@ try:
 			task = task_dict[task_uuid]
 			real_id = uuid_to_real_id[task_uuid]
 			task_description = task['description']
-			task_id_text = Text(f"[{real_id}] ", style="yellow")
-			task_description_text = Text(task_description, style="cyan")
+			task_id_text = Text(f"[{real_id}] ", style="red")
+			task_description_text = Text(task_description, style="white")
 			task_id_text.append(task_description_text)
 
 			due_date = task.get('due_date')
@@ -898,21 +898,21 @@ try:
 
 			# Display project in blue bold if different from the selected or if no project is assigned
 			if task.get('project') != selected_project:
-				project_text = Text(f" Project: {task.get('project', 'No Project')} ", style="bold magenta")
+				project_text = Text(f" {task.get('project', 'No Project')} ", style="bold magenta")
 				task_id_text.append(project_text)
 
 			task_branch = parent_branch.add(task_id_text)
 
 			annotations = task.get('annotations', [])
 			if annotations:
-				annotation_branch = task_branch.add(Text("Annotations:", style="white"))
+				annotation_branch = task_branch.add(Text("Annotations:", style="bold white"))
 				for annotation in annotations:
 					entry_datetime = parse(annotation['entry'])
 					if entry_datetime.tzinfo is None or entry_datetime.tzinfo.utcoffset(entry_datetime) is None:
 						entry_datetime = entry_datetime.replace(tzinfo=local_tz)
 					else:
 						entry_datetime = entry_datetime.astimezone(local_tz)
-					annotation_text = Text(f"{entry_datetime.strftime('%Y-%m-%d %H:%M:%S')} - {annotation['description']}", style="yellow")
+					annotation_text = Text(f"{entry_datetime.strftime('%Y-%m-%d %H:%M:%S')} - {annotation['description']}", style="white")
 					annotation_branch.add(annotation_text)
 
 			for dep_uuid in task['dependencies']:
@@ -1004,6 +1004,7 @@ try:
 													"Search another project",
 													"Handle tasks",
 													"Update metadata",
+													"Main menu",
 													"Exit"
 												]
 											).ask()
@@ -1043,6 +1044,8 @@ try:
 						break
 					elif action == "Display tree":
 						display_tasks(f"task pro:{item_name} +PENDING export")
+					elif action == "Main menu":
+						main_menu()
 			else:
 				print("No project or AoR found with that name.")
 # x_x
@@ -2365,49 +2368,69 @@ try:
 		from rich.console import Console
 		from collections import defaultdict
 		import sys
+
 		result = subprocess.run(command, shell=True, capture_output=True, text=True)
 		console = Console()
 
 		if result.stdout:
 			tasks = json.loads(result.stdout)
+			if not tasks:
+				console.print("No tasks found.")
+				return
+
 			project_tag_map = defaultdict(lambda: defaultdict(list))
 
 			for task in tasks:
 				project = task.get('project', 'No Project')
 				tags = task.get('tags', ['No Tag'])
 				description = task['description']
-				task_id = str(task['id'])  # Convert to string
+				task_id = str(task['id'])
 				due_date_str = task.get('due')
 				due_date = parse_datetime(due_date_str)
+				annotations = task.get('annotations', [])
 
-				for tag in tags:
-					project_tag_map[project][tag].append((task_id, description, due_date))
+				if project != 'No Project' or tags != ['No Tag']:
+					for tag in tags:
+						project_tag_map[project][tag].append((task_id, description, due_date, annotations))
 
 			tree = Tree("Task Overview", style="green bold")
 
+			# Build tree structure
 			for project, tags in project_tag_map.items():
+				if project == 'No Project' and not any(tags.values()):
+					continue
+
 				project_levels = project.split(".")
 				current_branch = tree
 
 				for level in project_levels:
-					found = False
+					# Check if level branch already exists
+					new_branch = None
 					for child in current_branch.children:
 						if child.label.plain == level:
-							current_branch = child
-							found = True
+							new_branch = child
 							break
-					if not found:
-						current_branch = current_branch.add(Text(level, style="yellow bold"))
+					if not new_branch:
+						new_branch = current_branch.add(Text(level, style="yellow bold"))
+					current_branch = new_branch
 
 				for tag, tasks in tags.items():
-					tasks_sorted = sorted(tasks, key=lambda x: (x[2] is None, x[2]))
+					if not tasks:
+						continue
 					tag_branch = current_branch.add(Text(tag, style="blue bold"))
-
-					for task_id, description, due_date in tasks_sorted:
+					for task_id, description, due_date, annotations in sorted(tasks, key=lambda x: (x[2] is None, x[2])):
 						task_id_text = Text(task_id, style="red bold")
 						description_text = Text(description, style="white")
 						due_date_text = Text(due_date.strftime("%Y-%m-%d") if due_date else "", style="green bold")
-						tag_branch.add(task_id_text + Text(" ") + description_text + Text(" ") + due_date_text)
+						task_line = task_id_text + Text(" ") + description_text + Text(" ") + due_date_text
+						task_branch = tag_branch.add(task_line)
+
+						if annotations:
+							annotation_branch = task_branch.add(Text("Annotations:", style="bold white"))
+							for annotation in annotations:
+								entry_datetime = datetime.strptime(annotation['entry'], "%Y%m%dT%H%M%SZ").strftime('%Y-%m-%d %H:%M:%S')
+								annotation_text = Text(f"{entry_datetime} - {annotation['description']}", style="white")
+								annotation_branch.add(annotation_text)
 
 			console.print(tree)
 		else:
@@ -2464,9 +2487,7 @@ try:
 			elif choice == 'h':
 				handle_task()
 			elif choice == 'b':
-				script_directory = os.path.dirname(os.path.abspath(__file__))
-				file_path = os.path.join(script_directory, "sultandb.json")
-				interactive_prompt(file_path)
+				main_menu()
 			elif choice == '':
 				console.clear()
 				break
@@ -2475,7 +2496,10 @@ try:
 
 
 
-
+	def main_menu():
+		script_directory = os.path.dirname(os.path.abspath(__file__))
+		file_path = os.path.join(script_directory, "sultandb.json")
+		interactive_prompt(file_path)
 # ==================
 
 	delimiter = ('-' * 40)
