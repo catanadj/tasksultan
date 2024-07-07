@@ -24,9 +24,17 @@ from datetime import date
 import texttable as tt
 import pandas as pd
 from fuzzywuzzy import process
+from rich.console import Console
+from rich.prompt import Prompt, Confirm
+from rich.table import Table
+from rich import print as rprint
+from rich.panel import Panel
+from rich.text import Text
 
 
 
+
+console = Console()
 def main():
 	# Map each command to its corresponding function
 	command_to_function = {
@@ -44,6 +52,7 @@ def main():
 		'o' : display_overdue_tasks,
 		'rr': recurrent_report,
 		'z': eisenhower,
+		'pi': greeting_pi
 	}
 	
 	parser = argparse.ArgumentParser(description='Process some commands.')
@@ -348,7 +357,7 @@ try:
 		print("Please enter the task command:")
 		print("Examples:")
 		print("'223,114,187 done' - Marks tasks 223, 114, and 187 as done.")
-		print("!!!! The operation will be done without asking for confirmation!.")
+		#print("!!!! The operation will be done without asking for confirmation!.")
 		print("To return to the main menu, press 'Enter'.\n")
 		print("----------------------------------------------\n")
 
@@ -357,7 +366,7 @@ try:
 			if task_command.lower() == '':
 				return
 			else:
-				subprocess.run(f"yes | task {task_command}",shell=True)
+				subprocess.run(f"task {task_command}",shell=True)
 
 
 	def display_due_tasks():
@@ -826,12 +835,11 @@ try:
 		from rich import print
 		from rich.tree import Tree
 		from rich.text import Text
-		from rich.console import Console
+		
 		from datetime import datetime
 		import pytz
 		from dateutil.parser import parse
 
-		console = Console()
 		warrior = TaskWarrior()
 		tasks = warrior.load_tasks()
 		selected_project = selected_item
@@ -1025,8 +1033,8 @@ try:
 						add_task_to_project(item_name)
 						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
 					elif action == "Set dependencies":
-						dependency_input = questionary.text("Enter the tasks and their dependencies in the format 'ID>ID>ID, ID>ID':\n").ask()
-						set_task_dependencies(dependency_input)
+						dependency_input = "" #questionary.text("Enter the tasks and their dependencies in the format 'ID>ID>ID, ID>ID':\n").ask()
+						manual_sort_dependencies(dependency_input)
 						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
 					elif action == "Remove dependencies":
 						task_ids_input = questionary.text("Enter the IDs of the tasks to remove dependencies (comma-separated):\n").ask()
@@ -1103,32 +1111,78 @@ try:
 		except Exception as e:
 			print(f"An error occurred while executing the task command: {e}")
 
-	def modify_dependent_tasks(dependent_ids, task_id):
-		ids = dependent_ids.split(',')
-		for id in ids:
-			modify_command = f"task {id.strip()} modify depends:{task_id}"
-			execute_task_command(modify_command)
-			print(f"Task {task_id} now depends on task {id.strip()}.")
+	# def modify_dependent_tasks(dependent_ids, task_id):
+	# 	ids = dependent_ids.split(',')
+	# 	for id in ids:
+	# 		modify_command = f"task {id.strip()} modify depends:{task_id}"
+	# 		execute_task_command(modify_command)
+	# 		print(f"Task {task_id} now depends on task {id.strip()}.")
 
-	def set_task_dependencies(dependency_input):
-		chains = dependency_input.split(',')
-		for chain in chains:
-			tasks = chain.split('>')
-			# Reverse to set up each as blocking the previous
-			tasks.reverse()
-			for i in range(len(tasks) - 1):
-				dependent_id = tasks[i].strip()
-				task_id = tasks[i + 1].strip()
-				modify_command = f"task {task_id} modify depends:{dependent_id}"
-				execute_task_command(modify_command)
-				print(f"Task {dependent_id} now depends on task {task_id}.")
+	def manual_sort_dependencies(sub_task_ids):
+		console.print("\n[bold cyan]Manual Sorting of Dependencies:[/bold cyan]")
+		for sub_task_id in sub_task_ids:
+			console.print(f"- Sub-task ID: {sub_task_id}")
+		
+		console.print("\nEnter the dependencies in the format 'task_id>subtask1=subtask2=subtask3>further_subtask'.")
+		console.print("Use '>' for sequential dependencies and '=' for parallel subtasks.")
+		console.print("You can enter multiple chains separated by commas.")
+		console.print("Type 'done' when finished.\n")
+
+		while True:
+			dependency_input = Prompt.ask("> ").strip()
+			if dependency_input.lower() == 'done':
+				break
+			
+			# Split the input into individual chains
+			chains = dependency_input.split(',')
+			
+			with console.status("[bold green]Setting dependencies...", spinner="dots") as status:
+				for chain in chains:
+					if '>' in chain or '=' in chain:
+						# Split the chain into levels
+						levels = chain.split('>')
+						
+						for i in range(len(levels) - 1):
+							parent_tasks = levels[i].split('=')
+							child_tasks = levels[i+1].split('=')
+							
+							# The last task in parent_tasks depends on all child_tasks
+							parent_task = parent_tasks[-1].strip()
+							for child_task in child_tasks:
+								modify_command = f"task {parent_task} modify depends:{child_task.strip()}"
+								execute_task_command(modify_command)
+								console.print(f"Task {parent_task} now depends on task {child_task.strip()}.")
+					else:
+						console.print(f"[bold yellow]Warning:[/bold yellow] Skipping invalid chain: {chain}")
+
+		console.print("[bold green]Dependency setting completed.[/bold green]")
 
 	def remove_task_dependencies(task_ids_input):
-		ids = task_ids_input.split(',')
-		for id in ids:
-			modify_command = f"task {id.strip()} modify depends:"
-			execute_task_command(modify_command)
-			print(f"Dependencies removed from task {id.strip()}.")
+		console.print("\n[bold cyan]Removing Task Dependencies[/bold cyan]")
+		
+		# Split the input by commas
+		id_groups = task_ids_input.split(',')
+		
+		all_ids = []
+		
+		# Process each group (single ID or range)
+		for group in id_groups:
+			group = group.strip()
+			if '-' in group:
+				# This is a range
+				start, end = map(int, group.split('-'))
+				all_ids.extend(range(start, end + 1))
+			else:
+				# This is a single ID
+				all_ids.append(int(group))
+		
+		with console.status("[bold green]Removing dependencies...", spinner="dots") as status:
+			for id in all_ids:
+				modify_command = f"task {id} modify depends:"
+				execute_task_command(modify_command)
+				console.print(f"Dependencies removed from task {id}.")
+		
+		console.print("[bold green]Dependency removal completed.[/bold green]")
 
 	def interactive_prompt(file_path):
 		# Load from SultanDB
@@ -1686,7 +1740,7 @@ try:
 		from rich.console import Console
 
 
-		console = Console()
+		
 		warrior = TaskWarrior()
 		tasks = warrior.load_tasks()
 
@@ -2089,7 +2143,6 @@ try:
 
 
 	def eisenhower():
-		delimiter = '=' * 30
 		try:
 			filter_query = input(Fore.CYAN + "Enter your Taskwarrior filter:\n ")
 
@@ -2290,7 +2343,7 @@ try:
 		closest_match, match_score = process.extractOne(item_name, project_list)
 
 		# You can adjust the threshold based on how strict you want the matching to be
-		MATCH_THRESHOLD = 80  # For example, 80 out of 100
+		MATCH_THRESHOLD = 100  # For example, 80 out of 100
 
 		if match_score >= MATCH_THRESHOLD:
 			return closest_match
@@ -2471,8 +2524,8 @@ try:
 			choice = Prompt.ask("[bold yellow]Enter your choice[/bold yellow]")
 			scope_command_map = {
 				'd': "task due:today +PENDING export",
-				'y': "task due:yest +PENDING export",
-				't': "task due:tomo +PENDING export",
+				'y': "task due:yesterday +PENDING export",
+				't': "task due:tomorrow status:pending export",
 				'w': "task +WEEK +PENDING export",
 				'm': "task +MONTH +PENDING export",
 				'o': "task +OVERDUE +PENDING export"
@@ -2497,6 +2550,343 @@ try:
 			else:
 				console.print("Invalid choice. Please try again.", style="bold red")
 
+# ------------------------------------------------------------------------------------
+# Inbox Processing - GTD Style
+
+	def gtd_prompt():
+		console.print(Panel("Mind Dump (GTD Style)", style="bold magenta"))
+		console.print("Enter everything on your mind, line by line. When you're done, add empty line.", style="cyan")
+		lines = []
+		while True:
+			line = Prompt.ask("> ")
+			if line.strip().lower() == '':
+				break
+			if line:
+				lines.append(line)
+		return lines
+
+	def add_task_to_taskwarrior(description):
+		tw = TaskWarrior()
+		task = Task(tw, description=description) # , tags=['in']
+		task.save()
+		return task['uuid']
+
+	# def process_input(lines):
+	# 	level_text = {0: ''}
+	# 	last_level = -1
+	# 	spaces_per_level = 2  # adjust this if needed
+
+	# 	# Ignore the first 4 and last 3 lines
+	# 	lines = lines[4:-3]
+
+	# 	output_lines = []  # Initialize the list to store all processed projects
+
+	# 	for line in lines:
+	# 		stripped = line.lstrip()
+	# 		level = len(line) - len(stripped)
+
+	# 		# Split the line into text and number, and only keep the text
+	# 		text = stripped.split()[0]
+
+	# 		if level % spaces_per_level != 0:
+	# 			raise ValueError('Invalid indentation level in input')
+
+	# 		level //= spaces_per_level
+
+	# 		if level > last_level + 1:
+	# 			raise ValueError('Indentation level increased by more than 1')
+
+	# 		level_text[level] = text
+
+	# 		# Clear all deeper levels
+	# 		level_text = {k: v for k, v in level_text.items() if k <= level}
+
+	# 		output_line = '.'.join(level_text[l] for l in range(level + 1))
+
+	# 		output_lines.append(output_line)  # Add each processed project to the list
+
+	# 		last_level = level
+		
+	# 	return output_lines  # Return the list of all processed projects
+
+	# def call_and_process_task_projects2():
+	# 	result = subprocess.run(['task', 'projects'], capture_output=True, text=True)
+	# 	lines = result.stdout.splitlines()
+	# 	project_list = process_input(lines)
+	# 	return project_list
+
+	# def search_project2(project_list):
+	# 	if callable(project_list):
+	# 		project_list = project_list()  # Ensure project_list is a list if it's a callable function
+		
+	# 	if not project_list:
+	# 		print("No projects available.")
+	# 		return None, None  # Return None if project list is empty or invalid
+
+	# 	completer = FuzzyCompleter(WordCompleter(project_list, ignore_case=True))
+	# 	item_name = prompt("Enter a project name: ", completer=completer)
+	# 	closest_match, match_score = process.extractOne(item_name, project_list)
+
+	# 	MATCH_THRESHOLD = 80  # Adjust the threshold based on your preference
+
+	# 	if match_score >= MATCH_THRESHOLD:
+	# 		return closest_match
+	# 	else:
+	# 		return item_name  # Use the new name entered by the user if no close match found
+
+
+	def add_task_to_project2(project_name):
+		task_description = questionary.text("Enter the description for the new task:").ask()
+		
+		create_command = f"task add proj:'{project_name}' {task_description}"
+		execute_task_command(create_command)
+		
+		task_id = get_latest_task_id()
+		if task_id:
+			has_dependencies = questionary.confirm("Does this task have dependencies?").ask()
+			if has_dependencies:
+				add_dependent_tasks(task_description, project_name, task_id)
+		else:
+			print("Failed to retrieve the task ID.")
+
+	# def execute_task_command(command):
+	# 	subprocess.run(command, shell=True)
+
+	# def get_latest_task_id():
+	# 	try:
+	# 		result = subprocess.run(['task', '+LATEST', 'rc.json.array=on', 'export'], capture_output=True, text=True)
+	# 		tasks = json.loads(result.stdout)
+	# 		if tasks:
+	# 			return tasks[-1]['id']
+	# 	except (IndexError, json.JSONDecodeError) as e:
+	# 		print(f"Error retrieving latest task ID: {e}")
+	# 	return None
+
+
+	def modify_dependent_tasks(task_id, dependent_task_ids):
+		tw = TaskWarrior()
+		for dep_id in dependent_task_ids.split(','):
+			try:
+				dep_task = tw.tasks.get(id=dep_id)
+				modify_command = f"task {task_id} modify depends:{dep_id}"
+				execute_task_command(modify_command)
+				print(f"Task {task_id} now depends on task {dep_id}.")
+			except Task.DoesNotExist:
+				print(f"Task with ID {dep_id} does not exist. Skipping.")
+
+
+	def add_dependent_tasks(task_description, project_name, task_id):
+		print("\nMain Task Description:")
+		print(task_description)
+		print("\nHelpful Questions:")
+		print("What needs to happen for this to be possible?")
+		print("What are the sub-tasks?")
+		print("What are the consequences?\n")
+
+		print("Enter each sub-task on a new line. Type 'done' when you are finished.\n")
+
+		sub_tasks = []
+		while True:
+			sub_task = input("> ").strip()
+			if sub_task.lower() == 'done':
+				break
+			if sub_task:
+				sub_tasks.append(sub_task)
+		
+		print("\nMain Task Description:")
+		print(task_description)
+		print("Sub-tasks entered:")
+
+		sub_task_ids = []
+		for sub_task in sub_tasks:
+			print(f"- {sub_task}")
+			create_command = f"task add proj:'{project_name}' {sub_task}"
+			execute_task_command(create_command)
+			sub_task_id = get_latest_task_id()
+			if sub_task_id:
+				sub_task_ids.append(sub_task_id)  # collect task IDs as strings
+				print(f"  ID: {sub_task_id}")
+			else:
+				print("Failed to retrieve sub-task ID. Skipping.")
+
+		if sub_task_ids:  # ensure we have valid IDs before proceeding
+			action = questionary.select(
+				"How would you like to handle these sub-tasks?",
+				choices=[
+					"1. Add them as sub-tasks of the main task",
+					"2. Manual sort dependencies"
+				]).ask()
+
+			if action.startswith("1"):
+				modify_dependent_tasks(task_id, ','.join(map(str, sub_task_ids)))  # Convert IDs to strings
+			elif action.startswith("2"):
+				manual_sort_dependencies(sub_task_ids)
+			else:
+				print("No valid sub-tasks were added for processing.")
+
+
+	# def manual_sort_dependencies(sub_task_ids):
+	# 	console.print("\n[bold cyan]Manual Sorting of Dependencies:[/bold cyan]")
+	# 	for sub_task_id in sub_task_ids:
+	# 		console.print(f"- Sub-task ID: {sub_task_id}")
+		
+	# 	console.print("\nEnter the dependencies in the format 'task_id>subtask1=subtask2=subtask3>further_subtask'.")
+	# 	console.print("Use '>' for sequential dependencies and '=' for parallel subtasks.")
+	# 	console.print("You can enter multiple chains separated by commas.")
+	# 	console.print("Type 'done' when finished.\n")
+
+	# 	while True:
+	# 		dependency_input = Prompt.ask("> ").strip()
+	# 		if dependency_input.lower() == 'done':
+	# 			break
+			
+	# 		# Split the input into individual chains
+	# 		chains = dependency_input.split(',')
+			
+	# 		with console.status("[bold green]Setting dependencies...", spinner="dots") as status:
+	# 			for chain in chains:
+	# 				if '>' in chain or '=' in chain:
+	# 					# Split the chain into levels
+	# 					levels = chain.split('>')
+						
+	# 					for i in range(len(levels) - 1):
+	# 						parent_tasks = levels[i].split('=')
+	# 						child_tasks = levels[i+1].split('=')
+							
+	# 						# The last task in parent_tasks depends on all child_tasks
+	# 						parent_task = parent_tasks[-1].strip()
+	# 						for child_task in child_tasks:
+	# 							modify_command = f"task {parent_task} modify depends:{child_task.strip()}"
+	# 							execute_task_command(modify_command)
+	# 							console.print(f"Task {parent_task} now depends on task {child_task.strip()}.")
+	# 				else:
+	# 					console.print(f"[bold yellow]Warning:[/bold yellow] Skipping invalid chain: {chain}")
+
+	# 	console.print("[bold green]Dependency setting completed.[/bold green]")
+
+
+
+	def set_task_dependencies(dependency_input):
+		chains = dependency_input.split(',')
+		for chain in chains:
+			tasks = chain.split('>')
+			# Reverse to set up each as blocking the previous
+			tasks.reverse()
+			for i in range(len(tasks) - 1):
+				dependent_id = tasks[i].strip()
+				task_id = tasks[i + 1].strip()
+				modify_command = f"task {task_id} modify depends:{dependent_id}"
+				execute_task_command(modify_command)
+				print(f"Task {dependent_id} now depends on task {task_id}.")
+				
+
+	def process_gtd(uuid):
+		tw = TaskWarrior()
+		task = tw.tasks.get(uuid=uuid)
+		
+		console.print(Panel(f"Processing: {task['description']}", style="bold green"))
+		elaborate = Confirm.ask("Do you want to elaborate on this or proceed?")
+		
+		if elaborate:
+			task['description'] = Prompt.ask("Please provide a better description")
+			task.save()
+		
+		actionable = Confirm.ask("Is this actionable?")
+		
+		if not actionable:
+			console.print("Choose a category for this item:", style="yellow")
+			choice = Prompt.ask("1. Forget (delete)\n2. Someday/Maybe list\n3. Reference\nEnter the number of your choice", choices=["1", "2", "3"])
+			
+			if choice == '1':
+				task.delete()
+				return
+			elif choice == '2':
+				task['tags'].discard('in')
+				task['tags'].add('someday')
+				task['project'] = 'Maybe'
+			elif choice == '3':
+				task['tags'].discard('in')
+				task['tags'].add('reference')
+				task['project'] = 'Resources'
+			else:
+				task['tags'].add('miscellaneous')
+			task.save()
+		else:
+			single_step = Confirm.ask("Is this a single-step task?")
+			
+			if single_step:
+				two_minute_task = Confirm.ask("Is this a 2 minute task?")
+				if two_minute_task:
+					do_now = Confirm.ask("Do you want to do it now?")
+					if do_now:
+						task.complete()
+						return
+				for_me = Confirm.ask("For me?")
+				if not for_me:
+					to_whom = Prompt.ask("To whom?")
+					task['tags'].discard('in')
+					task['tags'].add(to_whom)
+					task['project'] = 'WaitingFor'
+				else:
+					due_date = Prompt.ask("Assign due date (YYYY-MM-DD or leave blank)")
+					task['tags'].discard('in')
+					task['tags'].add('next')
+					if due_date:
+						task['due'] = due_date
+				task.save()
+			else:
+				project_list = call_and_process_task_projects2
+				project = search_project2(project_list)
+				task['project'] = project
+				task.save()
+
+				add_dependent_task = Confirm.ask("Do you want to add dependent tasks?")
+				if add_dependent_task:
+					add_dependent_tasks(task['description'], project, task['uuid'])
+				add_another_task = Confirm.ask(f"Do you want to add another task for project: {project}?")
+				if add_another_task:
+					while True:
+						add_task_to_project2(project)
+						another_task = Confirm.ask(f"Do you want to add another task to {project}?")
+						if not another_task:
+							break
+
+	def greeting_pi():
+		action = questionary.select(
+			"What would you like to do?",
+			choices=[
+				"Process inbox tasks",
+				"Do a mind dump",
+				"Both"
+			]).ask()
+
+		if action == "Do a mind dump" or action == "Both":
+			lines = gtd_prompt()
+			if lines:
+				uuids = [add_task_to_taskwarrior(line) for line in lines]
+				for uuid in uuids:
+					process_gtd(uuid)
+			console.print("Mind dump completed.", style="bold green")
+
+		if action == "Process inbox tasks" or action == "Both":
+			process_inbox_tasks()
+			console.print("Inbox tasks have been processed.", style="bold green")
+
+		console.print("All selected tasks have been processed and stored in the database.", style="bold blue")
+
+	def process_inbox_tasks():
+		tw = TaskWarrior()
+		inbox_tasks = tw.tasks.filter(status='pending', tags=['in'])
+		console.print(Panel("Starting of the inbox processing.", style="bold yellow"))
+		for task in inbox_tasks:
+			#console.print(f"Processing task: {task['description']}", style="cyan")
+			process_gtd(task['uuid'])
+
+
+
+
+
+# ------------------------------------------------------------------------------------
 
 
 	def main_menu():
