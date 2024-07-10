@@ -14,6 +14,7 @@ import re
 
 from tasklib import TaskWarrior, Task
 
+
 def parse_duration(duration_str):
     """
     Parse an ISO-8601 duration string into a timedelta object.
@@ -66,10 +67,15 @@ def create_chained_task(tw, original_task):
     else:
         raise ValueError("Original task must have a description")
 
-    # Copy other relevant attributes from the original task
-    for attr in ['project', 'tags', 'priority', 'cp']:
-        if attr in original_task:
-            new_task[attr] = original_task[attr]
+    # Copy all attributes from the original task, except for specific ones we want to set differently
+    exclude_attrs = ['uuid', 'id', 'status', 'end', 'modified', 'entry', 'chained_link', 'chainedPrev', 'chainedNext', 'annotations']
+    for attr, value in original_task.items():
+        if attr not in exclude_attrs:
+            new_task[attr] = value
+
+    # Explicitly copy UDAs
+    if 'value' in original_task:
+        new_task['value'] = original_task['value']
 
     # Set the due date based on the chain duration
     if 'cp' in original_task and 'end' in original_task:
@@ -80,17 +86,22 @@ def create_chained_task(tw, original_task):
 
     # Set other attributes
     new_task['status'] = 'pending'
-
-    # Increment chained_link
     new_task['chained_link'] = int(original_task.get('chained_link', 0)) + 1
-
-    # Set chainedPrev to the original task's short UUID
     new_task['chainedPrev'] = short_uuid(original_task['uuid'])
-
-    # Set uda.chained to "on" for the new task
     new_task['chained'] = 'on'
 
-    # Save the new task
+    # Save the new task before adding annotations
+    new_task.save()
+
+    # Copy annotations from the original task to the new task
+    if 'annotations' in original_task:
+        for annotation in original_task['annotations']:
+            if isinstance(annotation, dict) and 'description' in annotation:
+                new_task.add_annotation(annotation['description'])
+            elif isinstance(annotation, str):
+                new_task.add_annotation(annotation)
+
+    # Save the task again to ensure annotations are stored
     new_task.save()
 
     # Update the original task with chainedNext (short UUID)
@@ -102,26 +113,21 @@ def create_chained_task(tw, original_task):
 def main():
     # Read all lines from stdin
     input_lines = sys.stdin.readlines()
-
     # The last line is the modified task
     modified_task = json.loads(input_lines[-1])
-
     # Initialize TaskWarrior
     tw = TaskWarrior()
-
     # Check if the task was just completed, has a cp attribute,
     # and uda.chained is "on" (or not set, defaulting to "on" for backward compatibility)
     if (modified_task['status'] == 'completed' and
         modified_task.get('cp') and
         modified_task.get('end') and
         modified_task.get('chained', 'on') == 'on'):
-
         try:
             chained_next_uuid = create_chained_task(tw, modified_task)
             modified_task['chainedNext'] = chained_next_uuid
         except Exception as e:
             print(f"Error creating chained task: {str(e)}", file=sys.stderr)
-
     # Print only the modified task back to Taskwarrior
     print(json.dumps(modified_task))
 
