@@ -1,4 +1,6 @@
-from taskw import TaskWarrior
+
+from tasklib import TaskWarrior, Task
+from taskw import TaskWarrior as Warrior
 import json
 import datetime
 import inquirer
@@ -15,6 +17,7 @@ import questionary
 from questionary import Style
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import FuzzyWordCompleter
+from prompt_toolkit.completion import FuzzyCompleter, WordCompleter
 from dateutil.tz import tzlocal
 import subprocess
 import argparse
@@ -30,46 +33,56 @@ from rich.table import Table
 from rich import print as rprint
 from rich.panel import Panel
 from rich.text import Text
+from rich import box
 
 
-
-
+warrior = Warrior()
 console = Console()
+
 def main():
-	# Map each command to its corresponding function
-	command_to_function = {
-		's': search_task,
-		'c': clear_data,
-		'b': basic_summary,
-		'd': detailed_summary,
-		'a' : all_summary,
-		'i': display_inbox_tasks,
-		'tl': display_due_tasks,
-		'ht': handle_task,
-		'tc': task_control_center,
-		'td': print_tasks_for_selected_day,
-		'sp': call_and_process_task_projects,
-		'o' : display_overdue_tasks,
-		'rr': recurrent_report,
-		'z': eisenhower,
-		'pi': greeting_pi
-	}
-	
-	parser = argparse.ArgumentParser(description='Process some commands.')
-	parser.add_argument('command', metavar='CMD', type=str, nargs='?', default='',
-						help='A command to run')
+    # Map each command to its corresponding function
+    command_to_function = {
+        's': search_task,
+        'c': clear_data,
+        'b': basic_summary,
+        'd': detailed_summary,
+        'a': all_summary,
+        'i': display_inbox_tasks,
+        'tl': display_due_tasks,
+        'ht': handle_task,
+        'tc': task_control_center,
+        'td': print_tasks_for_selected_day,
+        'sp': call_and_process_task_projects,
+        'o': display_overdue_tasks,
+        'rr': recurrent_report,
+        'z': eisenhower,
+        'pi': greeting_pi,
+		'tm': task_manager
+    }
 
-	args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Process some commands.')
+    parser.add_argument('command', metavar='CMD', type=str, nargs='?', default='',
+                        help='A command to run')
+    parser.add_argument('arg', metavar='ARG', type=str, nargs='?', default=None,
+                        help='Optional argument for the command')
 
-	if args.command:
-		# Call the corresponding function if a command argument is provided
-		command_to_function[args.command]()
-	else:
-		# Continue to the interactive prompt if no command argument is provided
-		import os
-		script_directory = os.path.dirname(os.path.abspath(__file__))
-		file_path = os.path.join(script_directory, "sultandb.json")
-		interactive_prompt(file_path)
+    args = parser.parse_args()
+
+    if args.command:
+        if args.command in command_to_function:
+            if args.arg:
+                # If a secondary argument is provided, pass it to the function
+                command_to_function[args.command](args.arg)
+            else:
+                # Call the corresponding function if no secondary argument is provided
+                command_to_function[args.command]()
+        else:
+            print("Invalid command provided.")
+    else:
+        # Continue to the interactive prompt if no command argument is provided
+        script_directory = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(script_directory, "sultandb.json")
+        interactive_prompt(file_path)
 
 
 
@@ -111,7 +124,6 @@ try:
 			
 			
 	def display_overdue_tasks():
-		warrior = TaskWarrior()
 		tasks = warrior.load_tasks()
 		print(colored("Overdue Tasks", 'yellow', attrs=['bold']))
 		include_recurrent = questionary.confirm(
@@ -208,7 +220,7 @@ try:
 			date = datetime.now().date()
 			print(f"Selected tasks for {date}")
 		
-		w = TaskWarrior()
+		w = Warrior()
 		pending_tasks = w.load_tasks()['pending']
 		completed_tasks = w.load_tasks()['completed']
 		deleted_tasks = get_deleted_tasks_due_today(date)
@@ -296,7 +308,7 @@ try:
 
 
 	def search_task():
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		include_completed = questionary.confirm("Include completed tasks in the search?",default=False).ask()
@@ -329,7 +341,7 @@ try:
 
 
 	def display_inbox_tasks():
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()['pending']
 		delimiter = ('-' * 40)
 		# Filter tasks with the tag "in"
@@ -370,7 +382,7 @@ try:
 
 
 	def display_due_tasks():
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		include_recurrent = questionary.confirm(
@@ -485,7 +497,7 @@ try:
 				item['status'] = 'Completed'
 
 	def get_creation_date(item_name):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 		for task in tasks['pending']:
 			project = task.get('project')
@@ -498,7 +510,7 @@ try:
 		return None
 
 	def get_last_modified_date(item_name):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 		last_modified = None
 		for task in tasks['pending']:
@@ -514,7 +526,7 @@ try:
 		return last_modified
 
 	def get_tags_for_item(item_name):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 		tags = {}
 		for task in tasks['pending']:
@@ -583,7 +595,7 @@ try:
 			if tag != 'Completed':
 				print(f" - {Fore.BLACK}{Back.YELLOW}{tag}{Fore.RESET}{Back.RESET} ({count} task{'s' if count > 1 else ''})")
 				# Load tasks
-				warrior = TaskWarrior()
+				
 				tasks = warrior.load_tasks()['pending']
 				# Print tasks with the current tag and same project/AoR
 				for task in tasks:
@@ -651,6 +663,7 @@ try:
 		return int(execute_taskwarrior_command(command))
 
 	def view_data_with_tree(item, tags,item_name):
+		print(f"{item},{tags},{item_name}")
 		print(f"{Fore.BLUE}Name: {Fore.YELLOW}{item['name']}{Fore.RESET}")
 		print(
 			f"{Fore.BLUE}Description: {Fore.YELLOW}{item.get('description', '')}{Fore.RESET}")
@@ -840,7 +853,7 @@ try:
 		import pytz
 		from dateutil.parser import parse
 
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 		selected_project = selected_item
 
@@ -997,7 +1010,7 @@ try:
 				print(f"Dependency list for: {item_name}")
 				tags=get_tags_for_item(selected_item['name'])
 				view_data_with_tree(selected_item, tags,item_name)
-
+				print(f"{selected_item['name']}{tags}{selected_item}{item_name}")
 				while True:  # Run until a non-refresh option is selected
 					# Ask the user if they want to update the project or refresh
 					print("\n\n\n" + "-:" * 40)
@@ -1649,7 +1662,7 @@ try:
 		return answers['confirmation']
 
 	def get_tags_for_aor(aor_name):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()['pending']
 		aor_tasks = [task for task in tasks if 'tags' in task and task.get(
 			'project') == f"AoR.{aor_name}"]
@@ -1679,7 +1692,7 @@ try:
 			json.dump(sultandb, file, default=str, indent=4)
 
 	def sync_with_taskwarrior(aors, projects,file_path):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		task_projects = set()
@@ -1741,7 +1754,7 @@ try:
 
 
 		
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		project_data = defaultdict(lambda: defaultdict(list))
@@ -1809,7 +1822,7 @@ try:
 		from rich.text import Text
 		from rich.console import Console
 		console = Console()
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		project_data = defaultdict(lambda: defaultdict(list))
@@ -1906,7 +1919,7 @@ try:
 		from rich.text import Text
 		from rich.console import Console
 		console = Console()
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		project_data = defaultdict(lambda: defaultdict(list))
@@ -2054,7 +2067,7 @@ try:
 			return deleted_tasks
 		quote = "We are what we repeatedly do. Excellence, then, is not an act, but a habit."
 		print(quote)
-		warrior = TaskWarrior()
+		
 		all_tasks = warrior.load_tasks()
 
 		completed_tasks = all_tasks['completed']
@@ -2258,19 +2271,19 @@ try:
 
 		return total_urgency, total_importance
 		
-	def display_task_details(task_uuid):
-		command = f"task {task_uuid} export"
-		output = run_taskwarrior_command(command)
-		if output:
-			task_details = json.loads(output)
-			if task_details:
-				task = task_details[0]  # Assuming the first item is the task we want
-				for key, value in task.items():
-					print(f"{key}: {value}")
-			else:
-				print(Fore.RED + "No task details found.")
-		else:
-			print(Fore.RED + "Failed to retrieve task details.")
+	# def display_task_details(task_uuid):
+	# 	command = f"task {task_uuid} export"
+	# 	output = run_taskwarrior_command(command)
+	# 	if output:
+	# 		task_details = json.loads(output)
+	# 		if task_details:
+	# 			task = task_details[0]  # Assuming the first item is the task we want
+	# 			for key, value in task.items():
+	# 				print(f"{key}: {value}")
+	# 		else:
+	# 			print(Fore.RED + "No task details found.")
+	# 	else:
+	# 		print(Fore.RED + "Failed to retrieve task details.")
 
 	# =========================================================
 
@@ -2512,7 +2525,7 @@ try:
 		table.add_row("i", "Inbox Tasks")
 		table.add_row("h", "Handle Tasks")
 		table.add_row("b", "Back to main")
-		table.add_row("", "Exit")
+		table.add_row("↵", "Exit")
 
 		console.print(table)
 
@@ -2567,7 +2580,7 @@ try:
 
 	def add_task_to_taskwarrior(description):
 		tw = TaskWarrior()
-		task = Task(tw, description=description) # , tags=['in']
+		task = Task(tw, description=description, tags=['dump'])
 		task.save()
 		return task['uuid']
 
@@ -2615,24 +2628,24 @@ try:
 	# 	project_list = process_input(lines)
 	# 	return project_list
 
-	# def search_project2(project_list):
-	# 	if callable(project_list):
-	# 		project_list = project_list()  # Ensure project_list is a list if it's a callable function
+	def search_project3(project_list):
+		if callable(project_list):
+			project_list = project_list()  # Ensure project_list is a list if it's a callable function
 		
-	# 	if not project_list:
-	# 		print("No projects available.")
-	# 		return None, None  # Return None if project list is empty or invalid
+		if not project_list:
+			print("No projects available.")
+			return None, None  # Return None if project list is empty or invalid
 
-	# 	completer = FuzzyCompleter(WordCompleter(project_list, ignore_case=True))
-	# 	item_name = prompt("Enter a project name: ", completer=completer)
-	# 	closest_match, match_score = process.extractOne(item_name, project_list)
+		completer = FuzzyCompleter(WordCompleter(project_list, ignore_case=True))
+		item_name = prompt("Enter a project name: ", completer=completer)
+		closest_match, match_score = process.extractOne(item_name, project_list)
 
-	# 	MATCH_THRESHOLD = 80  # Adjust the threshold based on your preference
+		MATCH_THRESHOLD = 100  # Adjust the threshold based on your preference
 
-	# 	if match_score >= MATCH_THRESHOLD:
-	# 		return closest_match
-	# 	else:
-	# 		return item_name  # Use the new name entered by the user if no close match found
+		if match_score >= MATCH_THRESHOLD:
+			return closest_match
+		else:
+			return item_name  # Use the new name entered by the user if no close match found
 
 
 	def add_task_to_project2(project_name):
@@ -2780,76 +2793,103 @@ try:
 				print(f"Task {dependent_id} now depends on task {task_id}.")
 				
 
+	# Constants
+	TAG_DUMP = 'dump'
+	TAG_IN = 'in'
+	TAG_SOMEDAY = 'someday'
+	TAG_REFERENCE = 'reference'
+	TAG_NEXT = 'next'
+	PROJECT_MAYBE = 'Maybe'
+	PROJECT_RESOURCES = 'Resources'
+	PROJECT_WAITING_FOR = 'WaitingFor'
+
 	def process_gtd(uuid):
 		tw = TaskWarrior()
 		task = tw.tasks.get(uuid=uuid)
-		
+		task['tags'].discard(TAG_DUMP)
 		console.print(Panel(f"Processing: {task['description']}", style="bold green"))
-		elaborate = Confirm.ask("Do you want to elaborate on this or proceed?")
-		
-		if elaborate:
+
+		if Confirm.ask("Do you want to elaborate on this or proceed?"):
 			task['description'] = Prompt.ask("Please provide a better description")
 			task.save()
-		
-		actionable = Confirm.ask("Is this actionable?")
-		
-		if not actionable:
-			console.print("Choose a category for this item:", style="yellow")
-			choice = Prompt.ask("1. Forget (delete)\n2. Someday/Maybe list\n3. Reference\nEnter the number of your choice", choices=["1", "2", "3"])
-			
-			if choice == '1':
-				task.delete()
-				return
-			elif choice == '2':
-				task['tags'].discard('in')
-				task['tags'].add('someday')
-				task['project'] = 'Maybe'
-			elif choice == '3':
-				task['tags'].discard('in')
-				task['tags'].add('reference')
-				task['project'] = 'Resources'
-			else:
-				task['tags'].add('miscellaneous')
-			task.save()
-		else:
-			single_step = Confirm.ask("Is this a single-step task?")
-			
-			if single_step:
-				two_minute_task = Confirm.ask("Is this a 2 minute task?")
-				if two_minute_task:
-					do_now = Confirm.ask("Do you want to do it now?")
-					if do_now:
-						task.complete()
-						return
-				for_me = Confirm.ask("For me?")
-				if not for_me:
-					to_whom = Prompt.ask("To whom?")
-					task['tags'].discard('in')
-					task['tags'].add(to_whom)
-					task['project'] = 'WaitingFor'
-				else:
-					due_date = Prompt.ask("Assign due date (YYYY-MM-DD or leave blank)")
-					task['tags'].discard('in')
-					task['tags'].add('next')
-					if due_date:
-						task['due'] = due_date
-				task.save()
-			else:
-				project_list = call_and_process_task_projects2
-				project = search_project2(project_list)
-				task['project'] = project
-				task.save()
 
-				add_dependent_task = Confirm.ask("Do you want to add dependent tasks?")
-				if add_dependent_task:
-					add_dependent_tasks(task['description'], project, task['uuid'])
-				add_another_task = Confirm.ask(f"Do you want to add another task for project: {project}?")
-				if add_another_task:
-					while True:
-						add_task_to_project2(project)
-						another_task = Confirm.ask(f"Do you want to add another task to {project}?")
-						if not another_task:
-							break
+		if not Confirm.ask("Is this actionable?"):
+			process_non_actionable(task)
+		else:
+			process_actionable(task)
+
+	def process_non_actionable(task):
+		console.print("Choose a category for this item:", style="yellow")
+		choice = Prompt.ask("1. Forget (delete)\n2. Someday/Maybe list\n3. Reference\nEnter the number of your choice", choices=["1", "2", "3"])
+
+		if choice == '1':
+			task.delete()
+		elif choice == '2':
+			update_task_tags(task, [TAG_SOMEDAY], [TAG_IN, TAG_DUMP])
+			task['project'] = PROJECT_MAYBE
+		elif choice == '3':
+			update_task_tags(task, [TAG_REFERENCE], [TAG_IN, TAG_DUMP])
+			task['project'] = PROJECT_RESOURCES
+		else:
+			task['tags'].add('miscellaneous')
+		
+		task.save()
+
+	def process_actionable(task):
+		if Confirm.ask("Is this a single-step task (not part of a project)?"):
+			process_single_step(task)
+		else:
+			process_project_task(task)
+
+	def process_single_step(task):
+		if Confirm.ask("Is this a 2 minute task?"):
+			if Confirm.ask("Do you want to do it now?"):
+				task.done()
+				return
+
+		if not Confirm.ask("For me?"):
+			to_whom = Prompt.ask("To whom?")
+			update_task_tags(task, [to_whom], [TAG_IN, TAG_DUMP])
+			task['project'] = PROJECT_WAITING_FOR
+			if task['project'] == PROJECT_WAITING_FOR:
+				follow_up_date = Prompt.ask("When should you follow up? (YYYY-MM-DD)")
+				task['due'] = follow_up_date
+		else:
+			due_date = Prompt.ask("Assign due date (YYYY-MM-DD or leave blank)")
+			update_task_tags(task, [TAG_NEXT], [TAG_IN, TAG_DUMP])
+			if due_date:
+				task['due'] = due_date
+		
+		task.save()
+
+	def process_project_task(task):
+		if Confirm.ask("See a basic project list before selecting?"):
+			basic_summary()
+		
+		project_list = call_and_process_task_projects2()
+		project = search_project3(project_list)
+		task['project'] = project
+		update_task_tags(task, [], [TAG_IN, TAG_DUMP])
+		task.save()
+
+		console.print("Choose a category for this item:", style="yellow")
+		choice = Prompt.ask("1. Add dependent tasks\n2. Set dependency\n↵.Continue\nEnter the number of your choice", choices=["1", "2", ""])
+
+		if choice == '1':
+			display_tasks(f"task pro:{project} +PENDING export")
+			add_dependent_tasks(task['description'], project, task['uuid'])
+		elif choice == '2':
+			display_tasks(f"task pro:{project} +PENDING export")
+			manual_sort_dependencies()
+		else:
+			while Confirm.ask(f"Do you want to add another task for project: {project}?"):
+				add_task_to_project2(project)
+
+	def update_task_tags(task, add_tags, remove_tags):
+		for tag in add_tags:
+			task['tags'].add(tag)
+		for tag in remove_tags:
+			task['tags'].discard(tag)
 
 	def greeting_pi():
 		action = questionary.select(
@@ -2876,18 +2916,150 @@ try:
 
 	def process_inbox_tasks():
 		tw = TaskWarrior()
+
+		# First, process all tasks with the 'dump' tag
+		dump_tasks = tw.tasks.filter(status='pending', tags=['dump'])
+		if dump_tasks:
+			console.print(Panel("Dumped tasks found.", style="bold yellow"))
+			for task in dump_tasks:
+				#console.print(f"Processing dumped task: {task['description']}", style="cyan")
+				process_gtd(task['uuid'])
+
+		# Next, process regular inbox tasks
 		inbox_tasks = tw.tasks.filter(status='pending', tags=['in'])
-		console.print(Panel("Starting of the inbox processing.", style="bold yellow"))
-		for task in inbox_tasks:
-			#console.print(f"Processing task: {task['description']}", style="cyan")
-			process_gtd(task['uuid'])
+		if inbox_tasks:
+			console.print(Panel("Starting processing inbox tasks.", style="bold yellow"))
+			for task in inbox_tasks:
+				#console.print(f"Processing inbox task: {task['description']}", style="cyan")
+				process_gtd(task['uuid'])
+
+		# # Inform the user that all tasks have been processed
+		# console.print("All tasks have been processed and stored in the database.", style="bold blue")
+
 
 
 
 
 
 # ------------------------------------------------------------------------------------
+# TASK MANAGER
+	def display_task_details2(task):
+		# Print details in a formatted way
+		print(Fore.CYAN + f"Task UUID: {task['uuid']}")
+		print(f"Description: {task['description']}")
+		if 'due' in task:
+			print(f"Due Date: {task['due']}")
+		if 'project' in task:
+			print(f"Project: {task['project']}")
+		if 'tags' in task:
+			print(f"Tags: {', '.join(task['tags'])}")
+		
 
+
+
+	def task_manager(task_uuid):
+		while True:
+			tasks = get_tasks(task_uuid)
+			if not tasks:
+				console.print(Panel("No tasks found with the provided UUID.", style="bold red"))
+				return
+			current_task = tasks[0]  # Assuming you want to manage the first task if there are multiple
+			display_task_details2(current_task)
+
+			# Create a table for menu options
+			table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+			table.add_column("Option", style="yellow")
+			table.add_column("Description", style="cyan")
+
+			if 'project' in current_task and current_task['project']:
+				table.add_row("CP", "Change project")
+				table.add_row("AS", "Add Sub-tasks")
+				table.add_row("DT", "View Dependency Tree")
+				table.add_row("LT", "View logical tree")
+				table.add_row("SD", "Set Dependency")
+				table.add_row("RD", "Remove Dependency")
+			else:
+				table.add_row("AP", "Assign project")
+			table.add_row("TW", "TW prompt")
+			table.add_row("SP", "Search Project & Manage")
+			table.add_row("SA", "Select Another Task")
+			table.add_row("↵", "Exit")
+
+			console.print(Panel(table, title="Task Management Options", expand=False))
+
+			choice = console.input("[yellow]Enter your choice: ")
+
+			if choice == 'dt':
+				if 'project' in current_task and current_task['project']:
+					dependency_tree(current_task['project'])
+				else:
+					console.print(Panel("This task does not belong to any project.", style="bold red"))
+			elif choice in ['cp', 'ap']:
+				tw = TaskWarrior()
+				task = tw.get_task(uuid=task_uuid)
+				project_list = call_and_process_task_projects2()
+				project = search_project3(project_list)
+				command = ['task', task_uuid, 'modify', f'project:{project}']
+				subprocess.run(command, check=True)
+				console.print(Panel(f"Updated task {task_uuid} to project {project}.", style="bold green"))
+			elif choice == 'lt':
+				if 'project' in current_task and current_task['project']:
+					display_tasks(f"task pro:{current_task['project']} +PENDING export")
+				else:
+					console.print(Panel("No project associated with this task.", style="bold red"))
+			elif choice == 'as':
+				add_dependent_tasks(current_task['description'], current_task.get('project', ''), current_task['uuid'])
+				if 'project' in current_task and current_task['project']:
+					dependency_tree(current_task['project'])  # refresh the dependency tree
+			elif choice == 'sd':
+				dependency_input = console.input("Enter the tasks and their dependencies in the format 'ID>ID>ID, ID>ID':\n")
+				manual_sort_dependencies(dependency_input)
+				if 'project' in current_task and current_task['project']:
+					dependency_tree(current_task['project'])  # refresh the dependency tree
+			elif choice == 'rd':
+				task_ids_input = console.input("Enter the IDs of the tasks to remove dependencies (comma-separated):\n")
+				remove_task_dependencies(task_ids_input)
+				if 'project' in current_task and current_task['project']:
+					dependency_tree(current_task['project'])  # refresh the dependency tree
+			elif choice == 'tw':
+				handle_task()
+			elif choice == 'sp':
+				call_and_process_task_projects()
+			elif choice == 'sa':
+				new_task = console.input("Enter the IDs of the new task to load:\n")
+				tasks = get_tasks(new_task)
+				if not tasks:
+					console.print(Panel("No tasks found with the provided UUID.", style="bold red"))
+					return
+				current_task = tasks[0]
+			elif choice == '':
+				console.print(Panel("Exiting task manager.", style="bold green"))
+				break
+			else:
+				console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+
+			# Refresh the task details after each operation
+			task_uuid = current_task['uuid']  # Ensure we're using the correct UUID
+
+	def dependency_tree(project_name):
+		# Assuming the existence of functions to load data and process dependencies
+		script_directory = os.path.dirname(os.path.abspath(__file__))
+		file_path = os.path.join(script_directory, "sultandb.json")
+		aors, projects = load_sultandb(file_path)
+
+		active_aors, _, active_projects, _ = sync_with_taskwarrior(aors, projects, file_path)
+		all_items = active_projects + active_aors
+		closest_match = process.extractOne(project_name, [item['name'] for item in all_items])
+
+		if closest_match:
+			selected_item = next((item for item in all_items if item['name'] == closest_match[0]), None)
+			if selected_item:
+				print(f"Dependency list for: {project_name}")
+				tags = get_tags_for_item(selected_item['name'])
+				view_data_with_tree(selected_item, tags, project_name)
+
+
+# ------------------------------------------------------------------------------------
 
 	def main_menu():
 		script_directory = os.path.dirname(os.path.abspath(__file__))
