@@ -2393,6 +2393,9 @@ try:
 
 	# =========================================================
 
+	def short_uuid(uuid):
+		"""Return the short version of the UUID (up to the first dash)."""
+		return uuid.split('-')[0]
 
 	def run_taskwarrior_command(command):
 		try:
@@ -2465,15 +2468,30 @@ try:
 	def review_projects():
 		lines = call_and_process_task_projects2()
 		
-		for project in lines:
+		# Ask user if they want to start from the beginning or a specific project
+
+		start_choice = console.input("[royal_blue1]Do you want to start from the beginning (B) or from a specific project (S)? ")
+		
+		if start_choice.lower() == 's':
+			project_list = call_and_process_task_projects2()
+			project_name = search_project3(project_list)
+			try:
+				start_index = lines.index(project_name)
+			except ValueError:
+				console.print(Panel(f"Project '{project_name}' not found. Starting from the beginning.", style="bold yellow"))
+				start_index = 0
+		else:
+			start_index = 0
+
+		for project in lines[start_index:]:
 			# Check if the project has pending tasks
 			if not has_pending_tasks(project):
 				continue  # Skip to the next project if there are no pending tasks
-
+			
 			while True:
 				# Display tasks for the current project
 				display_tasks(f"task project:{project} project.not:{project}. +PENDING export")
-				
+				print("\n")
 				# Create a table for menu options
 				table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
 				table.add_column("Option", style="orange_red1")
@@ -2481,14 +2499,15 @@ try:
 				
 				table.add_row("TM", "Task Manager")
 				table.add_row("NT", "Add new task")
-				table.add_row("TP", "TW prompt")
+				table.add_row("TW", "TW prompt")
 				table.add_row("DT", "View Dependency Tree")
 				table.add_row("NP", "Next project")
+				table.add_row("SP", "Save progress and exit")
 				table.add_row("↵", "Exit review")
 				
 				console.print(Panel(table, title=f"Reviewing project: {project}", expand=False))
 				
-				choice = console.input("[yellow]Enter your choice: ")
+				choice = console.input("[royal_blue1]Enter your choice: ")
 
 				if choice.lower() == "tm":
 					task_ID = console.input("[cyan]Please enter the task ID: ")
@@ -2496,12 +2515,15 @@ try:
 						task_manager(task_ID)
 				elif choice.lower() == "nt":
 					add_task_to_project(project)
-				elif choice.lower() == "tp":
+				elif choice.lower() == "tw":
 					handle_task()
-				elif choice.lower() == "vd":
+				elif choice.lower() == "dt":
 					dependency_tree(project)
 				elif choice.lower() == "np":
 					break  # Move to the next project
+				elif choice.lower() == "sp":
+					console.print(Panel(f"Progress saved. You can resume from project '{project}' next time.", style="bold green"))
+					return  # Exit the review process
 				elif choice == "":
 					return  # Exit the entire review process
 				else:
@@ -2976,7 +2998,7 @@ try:
 		tw = TaskWarrior()
 		task = tw.tasks.get(uuid=uuid)
 		task['tags'].discard(TAG_DUMP)
-		console.print(Panel(f"Processing: {task['description']}", style="bold green"))
+		console.print(Panel(f"Processing: {task['description']} uuid:{short_uuid(task['uuid'])}", style="bold green"))
 
 		if Confirm.ask("Do you want to elaborate on this or proceed?"):
 			task['description'] = Prompt.ask("Please provide a better description")
@@ -3184,8 +3206,8 @@ try:
 				if 'project' in current_task and current_task['project']:
 					dependency_tree(current_task['project'])  # refresh the dependency tree
 			elif choice == 'sd':
-				dependency_input = console.input("Enter the tasks and their dependencies in the format 'ID>ID>ID, ID>ID':\n")
-				manual_sort_dependencies(dependency_input)
+				#dependency_input = console.input("Enter the tasks and their dependencies in the format 'ID>ID>ID, ID>ID':\n")
+				manual_sort_dependencies("")
 				if 'project' in current_task and current_task['project']:
 					dependency_tree(current_task['project'])  # refresh the dependency tree
 			elif choice == 'rd':
