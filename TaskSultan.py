@@ -35,6 +35,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich import box
 
+#delete
 
 warrior = Warrior()
 console = Console()
@@ -54,10 +55,12 @@ def main():
         'td': print_tasks_for_selected_day,
         'sp': call_and_process_task_projects,
         'o': display_overdue_tasks,
-        'rr': recurrent_report,
+        'rr': recurrent_report, # includes only the period type recurrent tasks
         'z': eisenhower,
         'pi': greeting_pi,
-		'tm': task_manager
+		'tm': task_manager,
+		'n': next_summary,
+		'rp': review_projects
     }
 
     parser = argparse.ArgumentParser(description='Process some commands.')
@@ -470,7 +473,7 @@ try:
 				print(colored(name, 'yellow', attrs=['bold']))
 				for task in tasks:
 					task_id = colored(f"[{task['id']}]", 'yellow')
-					description = colored(task['description'], 'cyan')
+					description = colored(task['description'], 'white')
 					tag = colored(','.join(task.get('tags', [])), 'red', attrs=['bold'])  # Join tags with comma
 					project = colored(task.get('project', ''), 'blue', attrs=['bold'])
 					time_remaining = colored(task.get('time_remaining', ''), 'green', attrs=['bold'])  # Display time remaining
@@ -482,6 +485,33 @@ try:
 							entry_date = datetime.strptime(annotation['entry'], '%Y%m%dT%H%M%SZ').date()
 							print(f"\t{Fore.CYAN}{entry_date}{Fore.YELLOW}: {annotation['description']}")
 				print('=' * 60)
+
+		# # Display tasks # each category in its own table
+		# for name, tasks in list(categorized_tasks.items()):
+		# 	if tasks:
+		# 		table = Table(title=Text(name, style="yellow bold"), expand=True)
+		# 		table.add_column("ID", style="yellow", no_wrap=True)
+		# 		table.add_column("Description", style="cyan")
+		# 		table.add_column("Tags", style="red")
+		# 		table.add_column("Project", style="blue")
+		# 		table.add_column("Time Remaining", style="green")
+
+		# 		for task in tasks:
+		# 			task_id = f"[{task['id']}]"
+		# 			description = task['description']
+		# 			tags = ','.join(task.get('tags', []))
+		# 			project = task.get('project', '')
+		# 			time_remaining = task.get('time_remaining', '')
+
+		# 			table.add_row(task_id, description, tags, project, time_remaining)
+
+		# 			if 'annotations' in task:
+		# 				for annotation in task['annotations']:
+		# 					entry_date = datetime.strptime(annotation['entry'], '%Y%m%dT%H%M%SZ').date()
+		# 					table.add_row("", Text(f"{entry_date}: {annotation['description']}", style="dim italic"), "", "", "")
+
+		# 		console.print(Panel(table, expand=False))
+		# 		console.print()
 
 	def get_item_info(user_input):
 		print(user_input + "this needs work")
@@ -839,7 +869,7 @@ try:
 			output_lines.append(output_line)  # Add each processed project to the list
 
 			last_level = level
-		
+		print(output_lines)
 		return output_lines  # Return the list of all processed projects
 
 
@@ -1064,7 +1094,7 @@ try:
 						print("Exit")
 						break
 					elif action == "Display tree":
-						display_tasks(f"task pro:{item_name} +PENDING export")
+						display_tasks(f"task project:{item_name} project.not:{item_name}. +PENDING export")
 					elif action == "Main menu":
 						main_menu()
 			else:
@@ -1751,9 +1781,79 @@ try:
 		from rich.tree import Tree
 		from rich.text import Text
 		from rich.console import Console
+		from collections import defaultdict
 
+		console = Console()
+		tasks = warrior.load_tasks()
+		project_data = defaultdict(lambda: defaultdict(list))
+		project_task_count = defaultdict(int)
+		now = datetime.utcnow().replace(tzinfo=pytz.UTC)
 
-		
+		for task in tasks['pending']:
+			project = task.get('project', None)
+			tags = task.get('tags', [])
+			description = task.get('description', '')
+			task_id = task.get('id', '')
+			due_date_str = task.get('due')
+			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
+
+			if project:
+				# Count tasks for each level of the project hierarchy
+				project_levels = project.split('.')
+				for i in range(1, len(project_levels) + 1):
+					project_task_count['.'.join(project_levels[:i])] += 1
+
+				if tags:
+					for tag in tags:
+						time_remaining = due_date - now if due_date else None
+						time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+				else:
+					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+			else:
+				project_task_count["No Project"] += 1
+				if tags:
+					for tag in tags:
+						project_data["No Project"][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+				else:
+					project_data["No Project"]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+
+		tree = Tree("Tasks Summary")
+
+		for project, tag_data in sorted(project_data.items()):
+			if project != "No Project":
+				project_levels = project.split(".")
+				project_branch = tree
+				for i, level in enumerate(project_levels):
+					color = colors[i % len(colors)]
+					current_project = '.'.join(project_levels[:i+1])
+					level_text = Text(f"{level} [{project_task_count[current_project]}]", style=f'{color} bold')
+					
+					if level_text not in [child.label for child in project_branch.children]:
+						project_branch = project_branch.add(level_text)
+					else:
+						project_branch = next(child for child in project_branch.children if child.label == level_text)
+
+				for tag, tasks_data in sorted(tag_data.items()):
+					tag_color = 'green' if not project.startswith("AoR.") else 'cyan'
+					tag_branch = project_branch.add(Text(f"{tag} [{len(tasks_data)}]", style=f'{tag_color} bold'))
+
+		# Handle "No Project" separately to make sure it comes at the end
+		if "No Project" in project_data:
+			project_branch = tree.add(Text(f"No Project [{project_task_count['No Project']}]", style='red bold'))
+			for tag, tasks_data in sorted(project_data["No Project"].items()):
+				tag_color = 'blue'
+				tag_branch = project_branch.add(Text(f"{tag} [{len(tasks_data)}]", style=f'{tag_color} bold'))
+
+		console.print(tree)
+
+	def next_summary():
+		#the modules are imported here because of an unidentified cause: the ascii codes are getting printed in the other functions instead of coloring the output when these modules are imported in the main.
+		from rich import print
+		from rich.tree import Tree
+		from rich.text import Text
+		from rich.console import Console
+		console = Console()
 		
 		tasks = warrior.load_tasks()
 
@@ -1768,52 +1868,58 @@ try:
 			due_date_str = task.get('due')
 			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
 
-			if project:
-				if tags:
-					for tag in tags:
-						time_remaining = due_date - now if due_date else None
-						time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
-						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+			# Only process tasks with the "next" tag
+			if 'next' in tags:
+				if project:
+					time_remaining = due_date - now if due_date else None
+					time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+					project_data[project]["next"] = [f"{task_id} {description}", due_date_str, time_remaining_str]
 				else:
-					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
-			else:
-				# For tasks without a project, we will put them under "No Project" key
-				if tags:
-					for tag in tags:
-						project_data["No Project"][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
-				else:
-					# For tasks without a project and without tags, we put them under "No Tag" key
-					project_data["No Project"]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+					# For tasks without a project, we will put them under "No Project" key
+					project_data["No Project"]["next"].append(f"{task_id} {description}")
 
-		tree = Tree("Tasks Summary")
+		tree = Tree(Text("Saikou", style='green bold'))
 
 		for project, tag_data in sorted(project_data.items()):
 			if project != "No Project":
 				project_levels = project.split(".")
 				project_branch = tree
-				for i, level in enumerate(project_levels):
-					color = colors[i % len(colors)]
-					level = Text(level, style=f'{color} bold')
-					if level not in [child.label for child in project_branch.children]:
-						project_branch = project_branch.add(level)
-					else:
-						project_branch = next(child for child in project_branch.children if child.label == level)
 
-				for tag, tasks_data in sorted(tag_data.items()):
-					tag_color = 'green' if not project.startswith("AoR.") else 'cyan'
-					tag_branch = project_branch.add(Text(f"{tag} [{len(tasks_data)}]", style=f'{tag_color} bold'))
+				for level_idx, level in enumerate(project_levels):
+					if level not in [child.label.plain for child in project_branch.children]:
+						project_branch = project_branch.add(Text(level, style=f'{colors[level_idx % len(colors)]} bold'))
+					else:
+						project_branch = next(child for child in project_branch.children if child.label.plain == level)
+
+				if "next" in tag_data:
+					tag_color = 'blue' if not project.startswith("AoR.") else 'yellow'
+					tag_branch = project_branch.add(Text("next", style=f'{tag_color} bold'))
+
+					task_data = tag_data["next"][0]
+					if task_data:
+						task_id, description = (task_data.split(" ", 1) + [""])[:2]
+						due_date = tag_data["next"][1] if len(tag_data["next"]) > 1 else None
+						try:
+							due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
+						except ValueError:
+							due_date_formatted = ""
+
+						time_remaining = tag_data["next"][2] if len(tag_data["next"]) > 2 else None
+
+						tag_branch.add(f"[red bold]{task_id}[/red bold] [white bold]{description}[/white bold] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
 
 		# Handle "No Project" separately to make sure it comes at the end
 		if "No Project" in project_data:
 			project_branch = tree.add(Text("No Project", style='red bold'))
-			for tag, tasks_data in sorted(project_data["No Project"].items()):
+			if "next" in project_data["No Project"]:
 				tag_color = 'blue'
-				tag_branch = project_branch.add(Text(f"{tag} [{len(tasks_data)} tasks]", style=f'{tag_color} bold'))
+				tag_branch = project_branch.add(Text("next", style=f'{tag_color} bold'))
+
+				for task_data in project_data["No Project"]["next"]:
+					task_id, description = (task_data.split(" ", 1) + [""])[:2]
+					tag_branch.add(f"[red bold]{task_id}[/red bold] [white]{description}[/white]")
 
 		console.print(tree)
-
-
-	
 	
 	def detailed_summary():
 		#the modules are imported here because of an unidentified cause: the ascii codes are getting printed in the other functions instead of coloring the output when these modules are imported in the main.
@@ -2205,7 +2311,7 @@ try:
 			return None
 
 	def get_tasks(filter_query):
-		command = f"task {filter_query} +PENDING -CHILD export"
+		command = f"task {filter_query} +PENDING export"
 		output = run_taskwarrior_command(command)
 		if output:
 			# Parse the JSON output into Python objects
@@ -2349,6 +2455,69 @@ try:
 		lines = result.stdout.splitlines()
 		project_list = process_input(lines)
 		return project_list
+
+
+
+
+
+
+
+	def review_projects():
+		lines = call_and_process_task_projects2()
+		
+		for project in lines:
+			# Check if the project has pending tasks
+			if not has_pending_tasks(project):
+				continue  # Skip to the next project if there are no pending tasks
+
+			while True:
+				# Display tasks for the current project
+				display_tasks(f"task project:{project} project.not:{project}. +PENDING export")
+				
+				# Create a table for menu options
+				table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+				table.add_column("Option", style="orange_red1")
+				table.add_column("Description", style="deep_sky_blue1")
+				
+				table.add_row("TM", "Task Manager")
+				table.add_row("NT", "Add new task")
+				table.add_row("TP", "TW prompt")
+				table.add_row("DT", "View Dependency Tree")
+				table.add_row("NP", "Next project")
+				table.add_row("↵", "Exit review")
+				
+				console.print(Panel(table, title=f"Reviewing project: {project}", expand=False))
+				
+				choice = console.input("[yellow]Enter your choice: ")
+
+				if choice.lower() == "tm":
+					task_ID = console.input("[cyan]Please enter the task ID: ")
+					if task_ID:
+						task_manager(task_ID)
+				elif choice.lower() == "nt":
+					add_task_to_project(project)
+				elif choice.lower() == "tp":
+					handle_task()
+				elif choice.lower() == "vd":
+					dependency_tree(project)
+				elif choice.lower() == "np":
+					break  # Move to the next project
+				elif choice == "":
+					return  # Exit the entire review process
+				else:
+					console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+
+		console.print(Panel("Review complete. All projects with pending tasks have been processed.", style="bold green"))
+
+	def has_pending_tasks(project):
+		# Use Taskwarrior to get pending tasks for the project
+		command = f"task project:{project} project.not:{project}. status:pending count"
+		result = subprocess.run(command, shell=True, capture_output=True, text=True)
+		count = int(result.stdout.strip())
+		return count > 0
+
+
+
 
 	def search_project2(project_list):
 		completer = FuzzyWordCompleter(project_list)
@@ -2797,10 +2966,10 @@ try:
 	TAG_DUMP = 'dump'
 	TAG_IN = 'in'
 	TAG_SOMEDAY = 'someday'
-	TAG_REFERENCE = 'reference'
+	TAG_REFERENCE = 'unsorted'
 	TAG_NEXT = 'next'
 	PROJECT_MAYBE = 'Maybe'
-	PROJECT_RESOURCES = 'Resources'
+	PROJECT_RESOURCES = 'Resources.References'
 	PROJECT_WAITING_FOR = 'WaitingFor'
 
 	def process_gtd(uuid):
@@ -2830,6 +2999,9 @@ try:
 		elif choice == '3':
 			update_task_tags(task, [TAG_REFERENCE], [TAG_IN, TAG_DUMP])
 			task['project'] = PROJECT_RESOURCES
+			category = Prompt.ask("Add a category (tag) for this reference item?")
+			if category:
+				task['tags'].add(f"{category}")
 		else:
 			task['tags'].add('miscellaneous')
 		
@@ -2968,8 +3140,8 @@ try:
 
 			# Create a table for menu options
 			table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
-			table.add_column("Option", style="yellow")
-			table.add_column("Description", style="cyan")
+			table.add_column("Option", style="orange_red1")
+			table.add_column("Description", style="cornflower_blue")
 
 			if 'project' in current_task and current_task['project']:
 				table.add_row("CP", "Change project")
