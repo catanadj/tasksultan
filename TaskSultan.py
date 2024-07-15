@@ -2470,7 +2470,7 @@ try:
 		
 		# Ask user if they want to start from the beginning or a specific project
 
-		start_choice = console.input("[royal_blue1]Do you want to start from the beginning (B) or from a specific project (S)? ")
+		start_choice = console.input("[deep_sky_blue1]Do you want to start from the beginning (B) or from a specific project (S)? ")
 		
 		if start_choice.lower() == 's':
 			project_list = call_and_process_task_projects2()
@@ -2720,39 +2720,47 @@ try:
 
 		console.print(table)
 
-	def task_control_center():
+	def task_control_center(choice=None):
 		console = Console()
-		while True:
-			console.print("[bold cyan]Task Control Center[/bold cyan]", justify="center")
-			display_menu(console)
-			choice = Prompt.ask("[bold yellow]Enter your choice[/bold yellow]")
-			scope_command_map = {
-				'd': "task due:today +PENDING export",
-				'y': "task due:yesterday +PENDING export",
-				't': "task due:tomorrow status:pending export",
-				'w': "task +WEEK +PENDING export",
-				'm': "task +MONTH +PENDING export",
-				'o': "task +OVERDUE +PENDING export"
-			}
+		scope_command_map = {
+			'd': "task due:today +PENDING export",
+			'y': "task due:yesterday +PENDING export",
+			't': "task due:tomorrow status:pending export",
+			'w': "task +WEEK +PENDING export",
+			'm': "task +MONTH +PENDING export",
+			'o': "task +OVERDUE +PENDING export"
+		}
 
-			if choice in scope_command_map:
-				console.clear()
-				display_tasks(scope_command_map[choice])
-			elif choice == 'l':
-				console.clear()
-				display_due_tasks()
-			elif choice == 'i':
-				console.clear()
-				display_inbox_tasks()
-			elif choice == 'h':
-				handle_task()
-			elif choice == 'b':
-				main_menu()
-			elif choice == '':
-				console.clear()
-				break
-			else:
-				console.print("Invalid choice. Please try again.", style="bold red")
+		if choice is None:
+			while True:
+				console.print("[bold cyan]Task Control Center[/bold cyan]", justify="center")
+				display_menu(console)
+				choice = Prompt.ask("[bold yellow]Enter your choice[/bold yellow]")
+				
+				if choice == '':
+					#console.clear()
+					break
+				
+				process_choice(choice, console, scope_command_map)
+		else:
+			process_choice(choice, console, scope_command_map)
+
+	def process_choice(choice, console, scope_command_map):
+		if choice in scope_command_map:
+			#console.clear()
+			display_tasks(scope_command_map[choice])
+		elif choice == 'l':
+			#console.clear()
+			display_due_tasks()
+		elif choice == 'i':
+			#console.clear()
+			display_inbox_tasks()
+		elif choice == 'h':
+			handle_task()
+		elif choice == 'b':
+			main_menu()
+		else:
+			console.print("Invalid choice. Please try again.", style="bold red")
 
 # ------------------------------------------------------------------------------------
 # Inbox Processing - GTD Style
@@ -3137,18 +3145,73 @@ try:
 
 # ------------------------------------------------------------------------------------
 # TASK MANAGER
+	from rich.tree import Tree
 	def display_task_details2(task):
-		# Print details in a formatted way
-		print(Fore.CYAN + f"Task UUID: {task['uuid']}")
-		print(f"Description: {task['description']}")
-		if 'due' in task:
-			print(f"Due Date: {task['due']}")
-		if 'project' in task:
-			print(f"Project: {task['project']}")
-		if 'tags' in task:
-			print(f"Tags: {', '.join(task['tags'])}")
+		console = Console()
 		
+		# Create the main tree
+		task_tree = Tree("Task Details")
 
+		# Add main task details
+		task_tree.add(Text(f"Task UUID: {short_uuid(task['uuid'])}", style="cyan"))
+		task_tree.add(Text(f"Description: {task['description']}", style="bold"))
+
+		# Handle the 'entry' date
+		if 'entry' in task:
+			try:
+				created_date = datetime.strptime(task['entry'], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+				delta = datetime.now(timezone.utc) - created_date
+				delta_str = f"{delta.days} days, {delta.seconds // 3600} hours ago"
+				task_tree.add(Text(f"Added on: {created_date.strftime('%Y-%m-%d %H:%M:%S')} ({delta_str})", style="light_sea_green"))
+			except ValueError:
+				task_tree.add(Text(f"Added on: {task['entry']}", style="light_sea_green"))
+
+		# Handle the 'due' date
+		if 'due' in task:
+			try:
+				due_date = datetime.strptime(task['due'], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+				delta = due_date - datetime.now(timezone.utc)
+				if delta.total_seconds() < 0:
+					delta_str = f"{abs(delta.days)} days, {abs(delta.seconds) // 3600} hours overdue"
+					task_tree.add(Text(f"Due Date: {due_date.strftime('%Y-%m-%d %H:%M:%S')} ({delta_str})", style="red"))
+				else:
+					delta_str = f"{delta.days} days, {delta.seconds // 3600} hours remaining"
+					task_tree.add(Text(f"Due Date: {due_date.strftime('%Y-%m-%d %H:%M:%S')} ({delta_str})", style="light_green"))
+			except ValueError:
+				task_tree.add(Text(f"Due Date: {task['due']}", style="red"))
+
+		if 'project' in task:
+			task_tree.add(Text(f"Project: {task['project']}", style="green"))
+		
+		if 'tags' in task:
+			task_tree.add(Text(f"Tags: {', '.join(task['tags'])}", style="yellow"))
+		
+		if 'ctx' in task:
+			task_tree.add(Text(f"Context: {task['ctx']}", style="magenta"))
+
+		# Handle annotations
+		annotations = task.get('annotations', [])
+		if annotations:
+			annotation_branch = task_tree.add(Text("Annotations:", style="white"))
+			for annotation in annotations:
+				entry_datetime = parse(annotation['entry'])
+				if entry_datetime.tzinfo is None or entry_datetime.tzinfo.utcoffset(entry_datetime) is None:
+					entry_datetime = entry_datetime.replace(tzinfo=timezone.utc)
+				entry_datetime = entry_datetime.astimezone(timezone.utc)
+				annotation_text = Text(f"{entry_datetime.strftime('%Y-%m-%d %H:%M:%S')} - {annotation['description']}", style="dim white")
+				annotation_branch.add(annotation_text)
+
+		# Create a panel with the tree
+		panel = Panel(
+			task_tree,
+			title="Task Details",
+			border_style="blue",
+			padding=(1, 1),
+			expand=False
+		)
+
+		# Print the panel
+		console.print(panel)
 
 
 	def task_manager(task_uuid):
@@ -3157,7 +3220,7 @@ try:
 			if not tasks:
 				console.print(Panel("No tasks found with the provided UUID.", style="bold red"))
 				return
-			current_task = tasks[0]  # Assuming you want to manage the first task if there are multiple
+			current_task = tasks[0]
 			display_task_details2(current_task)
 
 			# Create a table for menu options
@@ -3165,6 +3228,7 @@ try:
 			table.add_column("Option", style="orange_red1")
 			table.add_column("Description", style="cornflower_blue")
 
+			# Add the existing options
 			if 'project' in current_task and current_task['project']:
 				table.add_row("CP", "Change project")
 				table.add_row("AS", "Add Sub-tasks")
@@ -3174,16 +3238,22 @@ try:
 				table.add_row("RD", "Remove Dependency")
 			else:
 				table.add_row("AP", "Assign project")
+			
+			# Add the new "Update Context" option
+			table.add_row("CM", "Context Menu")
+
+			# Add the remaining options
 			table.add_row("TW", "TW prompt")
 			table.add_row("SP", "Search Project & Manage")
 			table.add_row("SA", "Select Another Task")
 			table.add_row("↵", "Exit")
 
 			console.print(Panel(table, title="Task Management Options", expand=False))
-
 			choice = console.input("[yellow]Enter your choice: ")
 
-			if choice == 'dt':
+			if choice == 'cm':
+				context_menu(current_task)
+			elif choice == 'dt':
 				if 'project' in current_task and current_task['project']:
 					dependency_tree(current_task['project'])
 				else:
@@ -3235,6 +3305,107 @@ try:
 			# Refresh the task details after each operation
 			task_uuid = current_task['uuid']  # Ensure we're using the correct UUID
 
+	def context_menu(task):
+		console = Console()
+		while True:
+			console.print(Panel("Context Menu", style="bold cyan"))
+			table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+			table.add_column("Option", style="orange_red1")
+			table.add_column("Description", style="cornflower_blue")
+			table.add_row("AC", "Add Context")
+			table.add_row("RC", "Remove Context")
+			table.add_row("VAC", "View All Contexts")
+			table.add_row("↵", "Return to Main Menu")
+
+			console.print(table)
+			choice = console.input("[yellow]Enter your choice: ").upper()
+
+			if choice == 'AC':
+				add_context(task)
+			elif choice == 'RC':
+				remove_context(task)
+			elif choice == 'VAC':
+				view_all_contexts()
+			elif choice == '':
+				break
+			else:
+				console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+
+	def add_context(task):
+		console = Console()
+		current_context = task.get('cntxt', '')
+		console.print(f"Current context: {current_context}")
+
+		new_context = console.input("Enter the context to add: ").strip()
+		existing_contexts = current_context.split(',') if current_context else []
+		
+		if new_context and new_context not in existing_contexts:
+			existing_contexts.append(new_context)
+			new_context_string = ','.join(existing_contexts)
+			command = ['task', task['uuid'], 'modify', f'cntxt:{new_context_string}']
+			subprocess.run(command, check=True)
+			console.print(Panel(f"Updated task context to: {new_context_string}", style="bold green"))
+		else:
+			console.print(Panel("Context already exists or invalid input. No changes made.", style="bold yellow"))
+
+	def remove_context(task):
+		console = Console()
+		current_context = task.get('cntxt', '')
+		console.print(f"Current context: {current_context}")
+
+		existing_contexts = current_context.split(',') if current_context else []
+		if not existing_contexts:
+			console.print(Panel("No contexts to remove.", style="bold yellow"))
+			return
+
+		console.print("Existing contexts:")
+		for i, ctx in enumerate(existing_contexts, 1):
+			console.print(f"{i}. {ctx}")
+		
+		choice = console.input("Enter the number of the context to remove or type the context name: ")
+		if choice.isdigit() and 1 <= int(choice) <= len(existing_contexts):
+			removed_context = existing_contexts.pop(int(choice) - 1)
+		elif choice in existing_contexts:
+			existing_contexts.remove(choice)
+		else:
+			console.print(Panel("Invalid choice. No context removed.", style="bold red"))
+			return
+
+		new_context_string = ','.join(existing_contexts)
+		command = ['task', task['uuid'], 'modify', f'cntxt:{new_context_string}']
+		subprocess.run(command, check=True)
+		console.print(Panel(f"Updated task context to: {new_context_string}", style="bold green"))
+
+	def view_all_contexts():
+		console = Console()
+		
+		command = ['task','status:pending', 'export']
+		result = subprocess.run(command, capture_output=True, text=True, check=True)
+		tasks = json.loads(result.stdout)
+
+		context_data = {}
+		for task in tasks:
+			contexts = task.get('cntxt', '').split(',')
+			for context in contexts:
+				context = context.strip()
+				if context:
+					if context not in context_data:
+						context_data[context] = {'count': 0, 'tasks': []}
+					context_data[context]['count'] += 1
+					context_data[context]['tasks'].append(task['id'])
+
+		table = Table(title="All Contexts in Use", box=box.ROUNDED)
+		table.add_column("Context", style="cyan")
+		table.add_column("#", style="magenta")
+		table.add_column("Task IDs", style="green")
+
+		for context, data in sorted(context_data.items(), key=lambda x: x[1]['count'], reverse=True):
+			task_ids = ', '.join(map(str, data['tasks']))
+			table.add_row(context, str(data['count']), task_ids)
+
+		console.print(table)
+		console.input("\nPress Enter to return to the Context Menu...")
+		
 	def dependency_tree(project_name):
 		# Assuming the existence of functions to load data and process dependencies
 		script_directory = os.path.dirname(os.path.abspath(__file__))
