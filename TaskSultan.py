@@ -693,7 +693,7 @@ try:
 		return int(execute_taskwarrior_command(command))
 
 	def view_data_with_tree(item, tags,item_name):
-		print(f"{item},{tags},{item_name}")
+		#print(f"{item},{tags},{item_name}")
 		print(f"{Fore.BLUE}Name: {Fore.YELLOW}{item['name']}{Fore.RESET}")
 		print(
 			f"{Fore.BLUE}Description: {Fore.YELLOW}{item.get('description', '')}{Fore.RESET}")
@@ -1037,68 +1037,75 @@ try:
 
 			# Run the project_summary with the selected project
 			if selected_item:
-				print(f"Dependency list for: {item_name}")
-				tags=get_tags_for_item(selected_item['name'])
-				view_data_with_tree(selected_item, tags,item_name)
-				print(f"{selected_item['name']}{tags}{selected_item}{item_name}")
-				while True:  # Run until a non-refresh option is selected
-					# Ask the user if they want to update the project or refresh
-					print("\n\n\n" + "-:" * 40)
-					action = questionary.select(
-												"What do you want to do next?",
-												choices=[
-													"Refresh",
-													"Display tree",
-													"Add new task",
-													"Set dependencies",
-													"Remove dependencies",
-													"Search another project",
-													"Handle tasks",
-													"Update metadata",
-													"Main menu",
-													"Exit"
-												]
-											).ask()
-					print("-:" * 40)
-					# CTRL+C actionx
-					action = "Exit" if action is None else action
+				console = Console()
+				display_tasks(f"task project:{item_name} +PENDING export")
 
-					if action == "Update metadata":
+				while True:
+					console.print("\n" + "-:" * 40)
+					
+					# Create a table for menu options
+					table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+					table.add_column("Option", style="orange_red1")
+					table.add_column("Description", style="light_sea_green")
+
+					table.add_row("R", "Refresh")
+					table.add_row("NT", "Add new task")
+					table.add_row("TM", "Task Manager")
+					table.add_row("DT", "Display dependency tree")
+					table.add_row("SD", "Set dependencies")
+					table.add_row("RD", "Remove dependencies")
+					table.add_row("SP", "Search another project")
+					table.add_row("TW", "TW prompt")
+					table.add_row("UM", "Update metadata")
+					table.add_row("M", "Main menu")
+					table.add_row("↵", "Exit")
+
+					console.print(Panel(table, title="Project Management Options", expand=False))
+					
+					choice = console.input("[yellow]Enter your choice: ").upper()
+
+					if choice == 'UM':
 						if item_name.startswith("AoR."):
 							specific_field = "standard"
 						else:
 							specific_field = "outcome"
-
 						update_item(all_items, all_items.index(selected_item), file_path, specific_field, aors, projects)
-						view_data_with_tree(selected_item, tags,item_name) #refresh after updating the data
-						#break  # Break the loop after updating
-					elif action == "Add new task":
+						view_data_with_tree(selected_item, tags, item_name)
+					elif choice == 'NT':
 						add_task_to_project(item_name)
-						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
-					elif action == "Set dependencies":
-						dependency_input = "" #questionary.text("Enter the tasks and their dependencies in the format 'ID>ID>ID, ID>ID':\n").ask()
+						display_tasks(f"task project:{item_name} +PENDING export")
+					elif choice == 'SD':
+						dependency_input = ""
 						manual_sort_dependencies(dependency_input)
-						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
-					elif action == "Remove dependencies":
-						task_ids_input = questionary.text("Enter the IDs of the tasks to remove dependencies (comma-separated):\n").ask()
+						view_data_with_tree(selected_item, tags, item_name)
+					elif choice == 'RD':
+						task_ids_input = console.input("Enter the IDs of the tasks to remove dependencies (comma-separated):\n")
 						remove_task_dependencies(task_ids_input)
-						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
-					elif action == "Search another project":
+						view_data_with_tree(selected_item, tags, item_name)
+					elif choice == 'SP':
 						call_and_process_task_projects()
-					elif action == "Handle tasks":
+					elif choice == 'TW':
 						handle_task()
-						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
-					elif action == "Refresh":
-						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
-					elif action == "Exit":
-						print("Exit")
+						display_tasks(f"task project:{item_name} +PENDING export")
+					elif choice == 'R':
+						console.clear()
+						display_tasks(f"task project:{item_name} +PENDING export")
+					elif choice == '':
+						console.print("Exiting project management.")
 						break
-					elif action == "Display tree":
-						display_tasks(f"task project:{item_name} project.not:{item_name}. +PENDING export")
-					elif action == "Main menu":
+					elif choice == 'DT':
+						tags = get_tags_for_item(selected_item['name'])
+						view_data_with_tree(selected_item, tags, item_name)
+					elif choice == 'M':
 						main_menu()
-			else:
-				print("No project or AoR found with that name.")
+					elif choice == 'TM':
+						task_ID = console.input("[cyan]Please enter the task ID: ")
+						if task_ID:
+							console.clear()
+							task_manager(task_ID)
+					else:
+						console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+
 # x_x
 
 	def add_task_to_project(project_name):
@@ -3333,7 +3340,7 @@ try:
 
 	def add_context(task):
 		console = Console()
-		current_context = task.get('cntxt', '')
+		current_context = task.get('ctx', '')
 		console.print(f"Current context: {current_context}")
 
 		new_context = console.input("Enter the context to add: ").strip()
@@ -3342,7 +3349,7 @@ try:
 		if new_context and new_context not in existing_contexts:
 			existing_contexts.append(new_context)
 			new_context_string = ','.join(existing_contexts)
-			command = ['task', task['uuid'], 'modify', f'cntxt:{new_context_string}']
+			command = ['task', task['uuid'], 'modify', f'ctx:{new_context_string}']
 			subprocess.run(command, check=True)
 			console.print(Panel(f"Updated task context to: {new_context_string}", style="bold green"))
 		else:
@@ -3350,7 +3357,7 @@ try:
 
 	def remove_context(task):
 		console = Console()
-		current_context = task.get('cntxt', '')
+		current_context = task.get('ctx', '')
 		console.print(f"Current context: {current_context}")
 
 		existing_contexts = current_context.split(',') if current_context else []
@@ -3372,7 +3379,7 @@ try:
 			return
 
 		new_context_string = ','.join(existing_contexts)
-		command = ['task', task['uuid'], 'modify', f'cntxt:{new_context_string}']
+		command = ['task', task['uuid'], 'modify', f'ctx:{new_context_string}']
 		subprocess.run(command, check=True)
 		console.print(Panel(f"Updated task context to: {new_context_string}", style="bold green"))
 
@@ -3385,7 +3392,7 @@ try:
 
 		context_data = {}
 		for task in tasks:
-			contexts = task.get('cntxt', '').split(',')
+			contexts = task.get('ctx', '').split(',')
 			for context in contexts:
 				context = context.strip()
 				if context:
