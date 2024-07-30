@@ -589,6 +589,8 @@ try:
 			field_value = item.get(
 				'standard') if 'outcome' not in item else item.get('outcome')
 			print(f"{Fore.BLUE}{field_name}: {Fore.YELLOW}{field_value}{Fore.RESET}")
+			if field_name == "Outcome":
+				print("Defining what 'DONE' means.")
 
 		creation_date = get_creation_date(item['name'])
 		if creation_date:
@@ -692,25 +694,32 @@ try:
 		command = f"task count project:{item_name} status:{status}"
 		return int(execute_taskwarrior_command(command))
 
-	def view_data_with_tree(item, tags,item_name):
-		#print(f"{item},{tags},{item_name}")
-		print(f"{Fore.BLUE}Name: {Fore.YELLOW}{item['name']}{Fore.RESET}")
-		print(
-			f"{Fore.BLUE}Description: {Fore.YELLOW}{item.get('description', '')}{Fore.RESET}")
+	def view_project_metadata(item, tags, item_name):
+		console = Console()
 
+		# Display item name and description
+		console.print(Panel(f"[blue]Name: [yellow]{item['name']}[/yellow]", title="Item Name", expand=False))
+		console.print(Panel(f"[blue]Description:\n [cornflower_blue]{item.get('description', '')}[/cornflower_blue]", title="Description", expand=False))
+
+		# Display task counts
 		pending_tasks = get_task_count(item_name, 'pending')
 		completed_tasks = get_task_count(item_name, 'completed')
 		deleted_tasks = get_task_count(item_name, 'deleted')
+		
+		task_counts = Text.assemble(
+			("Pending: ", "yellow"), (f"{pending_tasks}", "yellow"), (" | Completed: ", "yellow"), (f"{completed_tasks}", "green"), (" | Deleted: ", "yellow"), (f"{deleted_tasks}", "blue")
+		)
+		console.print(Panel(task_counts, title="Task Counts", expand=False))
+		
+		console.print("\n")
 
-		print(f"{Fore.YELLOW}Pending: {Fore.YELLOW}{pending_tasks}{Fore.RESET} | {Fore.YELLOW}Completed: {Fore.GREEN}{completed_tasks}{Fore.RESET} | {Fore.YELLOW}Deleted: {Fore.BLUE}{deleted_tasks}{Fore.RESET}")
-			  
-		print(delimiter)
-		if 'standard' in item:
+		# Display standard or outcome
+		if 'standard' in item or 'outcome' in item:
 			field_name = "Standard" if 'outcome' not in item else "Outcome"
-			field_value = item.get(
-				'standard') if 'outcome' not in item else item.get('outcome')
-			print(f"{Fore.BLUE}{field_name}: {Fore.YELLOW}{field_value}{Fore.RESET}")
+			field_value = item.get('standard') if 'outcome' not in item else item.get('outcome')
+			console.print(Panel(f"[blue]{field_name}: [yellow]{field_value}[/yellow]", title=field_name, expand=False))
 
+		# Display creation date
 		creation_date = get_creation_date(item['name'])
 		if creation_date:
 			current_datetime = datetime.now()
@@ -718,12 +727,11 @@ try:
 			creation_days_remaining = creation_time_difference.days
 			creation_time_remaining = creation_time_difference.seconds
 			creation_time_prefix = "-" if creation_days_remaining > 0 else "+"
-			creation_time_remaining_formatted = str(
-				timedelta(seconds=abs(creation_time_remaining)))
+			creation_time_remaining_formatted = str(timedelta(seconds=abs(creation_time_remaining)))
 			creation_time_difference_formatted = f"({creation_time_prefix}{abs(creation_days_remaining)} days, {creation_time_remaining_formatted})"
-			print(
-				f"{Fore.BLUE}Creation Date: {Fore.YELLOW}{creation_date} {creation_time_difference_formatted}{Fore.RESET}")
+			console.print(Panel(f"[blue]Creation Date: [yellow]{creation_date.strftime('%Y-%m-%d %H:%M')} {creation_time_difference_formatted}[/yellow]", title="Creation Date", expand=False))
 
+		# Display last modified date
 		last_modified_date = get_last_modified_date(item['name'])
 		if last_modified_date:
 			current_datetime = datetime.now()
@@ -731,49 +739,91 @@ try:
 			last_modified_days_remaining = last_modified_time_difference.days
 			last_modified_time_remaining = last_modified_time_difference.seconds
 			last_modified_time_prefix = "-" if last_modified_days_remaining > 0 else "+"
-			last_modified_time_remaining_formatted = str(
-				timedelta(seconds=abs(last_modified_time_remaining)))
+			last_modified_time_remaining_formatted = str(timedelta(seconds=abs(last_modified_time_remaining)))
 			last_modified_time_difference_formatted = f"({last_modified_time_prefix}{abs(last_modified_days_remaining)} days, {last_modified_time_remaining_formatted})"
-			print(f"{Fore.BLUE}Last Modified Date: {Fore.YELLOW}{last_modified_date} {last_modified_time_difference_formatted}{Fore.RESET}")
-		print(delimiter)
+			console.print(Panel(f"[blue]Last Modified Date: [yellow]{last_modified_date.strftime('%Y-%m-%d %H:%M')} {last_modified_time_difference_formatted}[/yellow]", title="Last Modified Date", expand=False))
+
+		# Display outcome
 		if 'outcome' in item:
-			print(
-				f"{Fore.BLUE}Outcome: {Fore.YELLOW}{item['outcome']}{Fore.RESET}")
+			console.print(Panel(f"[blue]Outcome: [yellow]{item['outcome']}[/yellow]", title="Outcome", expand=False))
 
-		print(delimiter)
+		# Display annotations
 		if 'annotations' in item:
-			print(f"\n{Fore.BLUE}Annotations:{Fore.RESET}")
-			for annotation in item['annotations']:
-				timestamp = annotation.get('timestamp')
+			table = Table(title="Annotations", box=box.SIMPLE)
+			table.add_column("Timestamp", style="dim", width=20)
+			table.add_column("Content", style="yellow")
+			
+			for i, annotation in enumerate(item['annotations']):
+				timestamp_str = annotation.get('timestamp')
 				content = annotation.get('content', '')
-				print(
-					f" - {Fore.YELLOW}{timestamp}{Fore.RESET}: {Fore.YELLOW}{content}{Fore.RESET}")
-		print(delimiter)
-		if 'workLogs' in item:
-			print(f"{Fore.BLUE}Work Logs:{Fore.RESET}")
-			for work_log in item['workLogs']:
-				timestamp = work_log.get('timestamp')
-				content = work_log.get('content', '')
-				print(
-					f" - {Fore.YELLOW}{timestamp}{Fore.RESET}: {Fore.YELLOW}{content}{Fore.RESET}")
-		print(delimiter)
-		project_summary(item_name)
-		print(delimiter)
 
-	def get_multiline_input(prompt):
-		print(prompt)
-		lines = []
-		while True:
-			line = input()
-			if line:
-				lines.append(line)
-			else:
-				break
-		return '\n'.join(lines)
+				# Remove milliseconds if present
+				if '.' in timestamp_str:
+					timestamp_str = timestamp_str.split('.')[0]
+
+				row_style = "gold1" if i % 2 == 0 else "cornflower_blue"
+				table.add_row(timestamp_str, content, style=row_style)
+			
+			console.print(table)
+		
+		# Display work logs
+		if 'workLogs' in item:
+			table = Table(title="Work Logs", box=box.SIMPLE)
+			table.add_column("Timestamp", style="dim", width=20)
+			table.add_column("Content", style="yellow")
+			
+			for i, work_log in enumerate(item['workLogs']):
+				timestamp_str = work_log.get('timestamp')
+				content = work_log.get('content', '')
+
+				# Remove milliseconds if present
+				if '.' in timestamp_str:
+					timestamp_str = timestamp_str.split('.')[0]
+
+				row_style = "deep_pink1" if i % 2 == 0 else "cornflower_blue"
+				table.add_row(timestamp_str, content, style=row_style)
+			
+			console.print(table)
+
+
+
+
+
+	from prompt_toolkit import PromptSession
+	from prompt_toolkit.key_binding import KeyBindings
+	from prompt_toolkit.application import get_app
+	from prompt_toolkit.filters import Condition
+	from prompt_toolkit.shortcuts import prompt
+	from prompt_toolkit.shortcuts.prompt import CompleteStyle
+	from prompt_toolkit.formatted_text import HTML
+	from prompt_toolkit.styles import Style
+	import inquirer
+
+
+	def get_multiline_input(prompt_message):
+		session = PromptSession()
+		bindings = KeyBindings()
+
+		@bindings.add('c-c')
+		def _(event):
+			event.app.exit()
+
+		@bindings.add('c-s')
+		def _(event):
+			event.app.exit(result=event.app.current_buffer.text)
+
+		return session.prompt(HTML(f'<skyblue>{prompt_message}</skyblue>\n> '),
+							multiline=True,
+							key_bindings=bindings,
+							complete_while_typing=False,
+							style=Style.from_dict({
+								'prompt': 'bg:#008800 #ffffff'
+							}))
 
 	def update_item(items, item_index, file_path, specific_field, aors, projects):
 		commands = ['Add description', 'Add annotation',
 					'Add work log entry', f'Add {specific_field}', 'Go back']
+		print("Use CTRL+C to exit or CTRL+S to exit and save from edit screen.")
 		while True:
 			questions = [
 				inquirer.List('command',
@@ -818,8 +868,7 @@ try:
 			elif answers['command'] == 'Go back':
 				break
 
-
-				
+					
 
 
 	def call_and_process_task_projects():
@@ -1006,105 +1055,104 @@ try:
 
 
 	def search_project(project_list):
-		# Load from SultanDB
 
-		
-		script_directory = os.path.dirname(os.path.abspath(__file__))
-		file_path = os.path.join(script_directory, "sultandb.json")
-		aors, projects = load_sultandb(file_path)
-
-		# Sync with TaskWarrior to update projects and AoRs
-		active_aors, _, active_projects, _ = sync_with_taskwarrior(aors, projects, file_path)
-
-		# Combine active and inactive projects and AoRs
-		all_items = active_projects + active_aors
-
-		# Create a list of all project and AoR names
-		item_names = [item['name'] for item in all_items]
-
-		# Create a fuzzy completer with all project and AoR names
-		#print ("Debug:" + project_list)
 		completer = FuzzyWordCompleter(project_list)
 
 		# Prompt the user for a project or AoR name
 		item_name = prompt("Enter a project or AoR name: ", completer=completer)
 		#print(item_name)
-		closest_match = process.extractOne(item_name, [item['name'] for item in all_items])
-		#print(closest_match)
-		if closest_match:
-			# If a match was found, retrieve the item from all_items
-			selected_item = next((item for item in all_items if item['name'] == closest_match[0]), None)
 
-			# Run the project_summary with the selected project
-			if selected_item:
-				console = Console()
+		# Run the project_summary with the selected project
+		console = Console()
+		display_tasks(f"task project:{item_name} +PENDING export")
+
+		while True:
+			console.print("\n" + "-:" * 40)
+			
+			# Create a table for menu options
+			table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+			table.add_column("Option", style="orange_red1")
+			table.add_column("Description", style="light_sea_green")
+
+			table.add_row("R", "Refresh")
+			table.add_row("NT", "Add new task")
+			table.add_row("TM", "Task Manager")
+			table.add_row("DT", "Display dependency tree")
+			table.add_row("SD", "Set dependencies")
+			table.add_row("RD", "Remove dependencies")
+			table.add_row("SP", "Search another project")
+			table.add_row("TW", "TW prompt")
+			table.add_row("M", "View/Update metadata")
+			table.add_row("MA", "Main menu")
+			table.add_row("", "Exit")
+
+			console.print(Panel(table, title="Project Management Options", expand=False))
+			
+			choice = console.input("[yellow]Enter your choice: ").upper()
+
+			if choice == 'M':
+				# Load from SultanDB
+				script_directory = os.path.dirname(os.path.abspath(__file__))
+				file_path = os.path.join(script_directory, "sultandb.json")
+				aors, projects = load_sultandb(file_path)
+
+				# Sync with TaskWarrior to update projects and AoRs
+				active_aors, _, active_projects, _ = sync_with_taskwarrior(aors, projects, file_path)
+
+				# Combine active and inactive projects and AoRs
+				all_items = active_projects + active_aors
+
+				# Create a list of all project and AoR names
+				item_names = [item['name'] for item in all_items]
+				closest_match = process.extractOne(item_name, [item['name'] for item in all_items])
+				#print(closest_match)
+				if closest_match:
+					# If a match was found, retrieve the item from all_items
+					selected_item = next((item for item in all_items if item['name'] == closest_match[0]), None)
+
+				# Create a fuzzy completer with all project and AoR names
+				#print ("Debug:" + project_list)
+				if item_name.startswith("AoR."):
+					specific_field = "standard"
+				else:
+					specific_field = "outcome"
+				tags = get_tags_for_item(selected_item['name'])
+				view_project_metadata(selected_item, tags, item_name)
+				update_item(all_items, all_items.index(selected_item), file_path, specific_field, aors, projects)
+			elif choice == 'NT':
+				add_task_to_project(item_name)
 				display_tasks(f"task project:{item_name} +PENDING export")
-
-				while True:
-					console.print("\n" + "-:" * 40)
-					
-					# Create a table for menu options
-					table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
-					table.add_column("Option", style="orange_red1")
-					table.add_column("Description", style="light_sea_green")
-
-					table.add_row("R", "Refresh")
-					table.add_row("NT", "Add new task")
-					table.add_row("TM", "Task Manager")
-					table.add_row("DT", "Display dependency tree")
-					table.add_row("SD", "Set dependencies")
-					table.add_row("RD", "Remove dependencies")
-					table.add_row("SP", "Search another project")
-					table.add_row("TW", "TW prompt")
-					table.add_row("UM", "Update metadata")
-					table.add_row("M", "Main menu")
-					table.add_row("↵", "Exit")
-
-					console.print(Panel(table, title="Project Management Options", expand=False))
-					
-					choice = console.input("[yellow]Enter your choice: ").upper()
-
-					if choice == 'UM':
-						if item_name.startswith("AoR."):
-							specific_field = "standard"
-						else:
-							specific_field = "outcome"
-						update_item(all_items, all_items.index(selected_item), file_path, specific_field, aors, projects)
-						view_data_with_tree(selected_item, tags, item_name)
-					elif choice == 'NT':
-						add_task_to_project(item_name)
-						display_tasks(f"task project:{item_name} +PENDING export")
-					elif choice == 'SD':
-						dependency_input = ""
-						manual_sort_dependencies(dependency_input)
-						view_data_with_tree(selected_item, tags, item_name)
-					elif choice == 'RD':
-						task_ids_input = console.input("Enter the IDs of the tasks to remove dependencies (comma-separated):\n")
-						remove_task_dependencies(task_ids_input)
-						view_data_with_tree(selected_item, tags, item_name)
-					elif choice == 'SP':
-						call_and_process_task_projects()
-					elif choice == 'TW':
-						handle_task()
-						display_tasks(f"task project:{item_name} +PENDING export")
-					elif choice == 'R':
-						console.clear()
-						display_tasks(f"task project:{item_name} +PENDING export")
-					elif choice == '':
-						console.print("Exiting project management.")
-						break
-					elif choice == 'DT':
-						tags = get_tags_for_item(selected_item['name'])
-						view_data_with_tree(selected_item, tags, item_name)
-					elif choice == 'M':
-						main_menu()
-					elif choice == 'TM':
-						task_ID = console.input("[cyan]Please enter the task ID: ")
-						if task_ID:
-							console.clear()
-							task_manager(task_ID)
-					else:
-						console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+			elif choice == 'SD':
+				dependency_input = ""
+				manual_sort_dependencies(dependency_input)
+				project_summary(item_name)
+			elif choice == 'RD':
+				task_ids_input = console.input("Enter the IDs of the tasks to remove dependencies (comma-separated):\n")
+				remove_task_dependencies(task_ids_input)
+				project_summary(item_name)
+			elif choice == 'SP':
+				call_and_process_task_projects()
+			elif choice == 'TW':
+				handle_task()
+				display_tasks(f"task project:{item_name} +PENDING export")
+			elif choice == 'R':
+				console.clear()
+				display_tasks(f"task project:{item_name} +PENDING export")
+			elif choice == '':
+				console.print("Exiting project management.")
+				break
+			elif choice == 'DT':
+				#tags = get_tags_for_item(selected_item['name'])
+				project_summary(item_name)
+			elif choice == 'MA':
+				main_menu()
+			elif choice == 'TM':
+				task_ID = console.input("[cyan]Please enter the task ID: ")
+				if task_ID:
+					console.clear()
+					task_manager(task_ID)
+			else:
+				console.print(Panel("Invalid choice. Please try again.", style="bold red"))
 
 # x_x
 
@@ -1243,19 +1291,19 @@ try:
 			aors, projects,file_path)
 
 		commands = {
-			'ua': ('Update AoRs', '⟳'),
-			'up': ('Update Projects', '🗓️'),
-			'e': ('Exit', '⇒'),
-			's': ('Search', '🔍'),
-			'c': ('Clear Data', '✖'),
-			'b': ('Basic summary', '☰'),
-			'd': ('Detailed summary', '☷'),
-			'tc': ('Task centre', '⌖'),
-			'ht': ('Handle Task', '🔧'),
-			'o' : ('Overdue tasks list','Δ'),
-			'td': ('Daily tasks', '✓'),
-			'rr': ('Recurrent tasks report', '↻'),
-			'z': ('Process or Value assignment', '⚙')
+			'ua': ('Update AoRs', ''),
+			'up': ('Update Projects', ''),
+			'e': ('Exit', ''),
+			's': ('Search', ''),
+			'c': ('Clear Data', ''),
+			'b': ('Basic summary', ''),
+			'd': ('Detailed summary', ''),
+			'tc': ('Task centre', ''),
+			'ht': ('Handle Task', ''),
+			'o' : ('Overdue tasks list',''),
+			'td': ('Daily tasks', ''),
+			'rr': ('Recurrent tasks report', ''),
+			'z': ('Process or Value assignment', '')
 		}
 
 		custom_style = Style([
@@ -2510,7 +2558,7 @@ try:
 				table.add_row("DT", "View Dependency Tree")
 				table.add_row("NP", "Next project")
 				table.add_row("SP", "Save progress and exit")
-				table.add_row("↵", "Exit review")
+				table.add_row("", "Exit review")
 				
 				console.print(Panel(table, title=f"Reviewing project: {project}", expand=False))
 				
@@ -2723,7 +2771,7 @@ try:
 		table.add_row("i", "Inbox Tasks")
 		table.add_row("h", "Handle Tasks")
 		table.add_row("b", "Back to main")
-		table.add_row("↵", "Exit")
+		table.add_row("", "Exit")
 
 		console.print(table)
 
@@ -3082,7 +3130,7 @@ try:
 		task.save()
 
 		console.print("Choose a category for this item:", style="yellow")
-		choice = Prompt.ask("1. Add dependent tasks\n2. Set dependency\n↵.Continue\nEnter the number of your choice", choices=["1", "2", ""])
+		choice = Prompt.ask("1. Add dependent tasks\n2. Set dependency\n.Continue\nEnter the number of your choice", choices=["1", "2", ""])
 
 		if choice == '1':
 			display_tasks(f"task pro:{project} +PENDING export")
@@ -3112,6 +3160,7 @@ try:
 		if action == "Do a mind dump" or action == "Both":
 			lines = gtd_prompt()
 			if lines:
+				print("Adding the tasks to TW DB...")
 				uuids = [add_task_to_taskwarrior(line) for line in lines]
 				for uuid in uuids:
 					process_gtd(uuid)
@@ -3253,7 +3302,7 @@ try:
 			table.add_row("TW", "TW prompt")
 			table.add_row("SP", "Search Project & Manage")
 			table.add_row("SA", "Select Another Task")
-			table.add_row("↵", "Exit")
+			table.add_row("", "Exit")
 
 			console.print(Panel(table, title="Task Management Options", expand=False))
 			choice = console.input("[yellow]Enter your choice: ")
@@ -3322,7 +3371,7 @@ try:
 			table.add_row("AC", "Add Context")
 			table.add_row("RC", "Remove Context")
 			table.add_row("VAC", "View All Contexts")
-			table.add_row("↵", "Return to Main Menu")
+			table.add_row("", "Return to Main Menu")
 
 			console.print(table)
 			choice = console.input("[yellow]Enter your choice: ").upper()
@@ -3414,21 +3463,21 @@ try:
 		console.input("\nPress Enter to return to the Context Menu...")
 		
 	def dependency_tree(project_name):
-		# Assuming the existence of functions to load data and process dependencies
-		script_directory = os.path.dirname(os.path.abspath(__file__))
-		file_path = os.path.join(script_directory, "sultandb.json")
-		aors, projects = load_sultandb(file_path)
+		# # Assuming the existence of functions to load data and process dependencies
+		# script_directory = os.path.dirname(os.path.abspath(__file__))
+		# file_path = os.path.join(script_directory, "sultandb.json")
+		# aors, projects = load_sultandb(file_path)
 
-		active_aors, _, active_projects, _ = sync_with_taskwarrior(aors, projects, file_path)
-		all_items = active_projects + active_aors
-		closest_match = process.extractOne(project_name, [item['name'] for item in all_items])
+		# active_aors, _, active_projects, _ = sync_with_taskwarrior(aors, projects, file_path)
+		# all_items = active_projects + active_aors
+		# closest_match = process.extractOne(project_name, [item['name'] for item in all_items])
 
-		if closest_match:
-			selected_item = next((item for item in all_items if item['name'] == closest_match[0]), None)
-			if selected_item:
-				print(f"Dependency list for: {project_name}")
-				tags = get_tags_for_item(selected_item['name'])
-				view_data_with_tree(selected_item, tags, project_name)
+		# if closest_match:
+		# 	selected_item = next((item for item in all_items if item['name'] == closest_match[0]), None)
+		# 	if selected_item:
+		# 		print(f"Dependency list for: {project_name}")
+		# 		#tags = get_tags_for_item(selected_item['name'])
+		project_summary(project_name)
 
 
 # ------------------------------------------------------------------------------------
