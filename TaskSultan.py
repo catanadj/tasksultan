@@ -60,7 +60,8 @@ def main():
         'pi': greeting_pi,
 		'tm': task_manager,
 		'n': next_summary,
-		'rp': review_projects
+		'rp': review_projects,
+		'to':task_organizer
     }
 
     parser = argparse.ArgumentParser(description='Process some commands.')
@@ -3478,6 +3479,270 @@ try:
 		# 		print(f"Dependency list for: {project_name}")
 		# 		#tags = get_tags_for_item(selected_item['name'])
 		project_summary(project_name)
+	
+	def task_organizer():
+		# import subprocess
+		# import json
+		# from datetime import datetime, timedelta
+		import re
+		# import pytz
+		# from collections import defaultdict
+		# from rich.console import Console
+		# from rich.panel import Panel
+		# from rich.text import Text
+
+		def get_tasks_for_tomorrow():
+			tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+			command = f"task due:{tomorrow} +PENDING export"
+			result = subprocess.run(command, shell=True, capture_output=True, text=True)
+			tasks = json.loads(result.stdout)
+			return sorted(tasks, key=lambda x: x.get('due', ''))
+
+		def get_tasks_for_day(date):
+			command = f"task due:{date} export"
+			result = subprocess.run(command, shell=True, capture_output=True, text=True)
+			tasks = json.loads(result.stdout)
+			return sorted(tasks, key=lambda x: x.get('due', ''))
+
+		def parse_duration(duration_str):
+			if not duration_str:
+				return 0.0
+
+			total_minutes = 0.0
+			years = float(re.search(r'(\d+)Y', duration_str).group(1)) if 'Y' in duration_str else 0
+			months = float(re.search(r'(\d+)M', duration_str).group(1)) if 'M' in duration_str and 'T' not in duration_str else 0
+			days = float(re.search(r'(\d+)D', duration_str).group(1)) if 'D' in duration_str else 0
+			hours = float(re.search(r'(\d+)H', duration_str).group(1)) if 'H' in duration_str else 0
+			minutes = float(re.search(r'(\d+)M', duration_str).group(1)) if 'M' in duration_str and 'T' in duration_str else 0
+			seconds = float(re.search(r'(\d+)S', duration_str).group(1)) if 'S' in duration_str else 0
+
+			total_minutes += years * 525600  # Approximate, doesn't account for leap years
+			total_minutes += months * 43800  # Approximate, assumes 30-day months
+			total_minutes += days * 1440
+			total_minutes += hours * 60
+			total_minutes += minutes
+			total_minutes += seconds / 60
+
+			return total_minutes
+
+		def format_duration(minutes):
+			hours, mins = divmod(round(minutes), 60)
+			return f"{int(hours):02d}:{int(mins):02d}"
+
+		class TaskOrganizer:
+			def __init__(self):
+				self.console = Console()
+				self.current_date = (datetime.now() + timedelta(days=1)).date()
+				self.refresh_tasks()
+
+			def run(self):
+				while True:
+					self.display_calendar_view()
+					self.display_menu()
+					choice = self.console.input("[yellow]Enter your choice: ")
+					self.process_command(choice)
+
+			def display_calendar_view(self):
+				calendar_view = self.create_calendar_view(self.tasks)
+				for item in calendar_view:
+					if isinstance(item, str):
+						self.console.print(item, end='')
+					else:
+						self.console.print(item)
+
+			def display_menu(self):
+				table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+				table.add_column("Option", style="orange_red1")
+				table.add_column("Description", style="cornflower_blue")
+
+				table.add_row("MV", "Move task")
+				table.add_row("DR", "Change duration")
+				table.add_row("RF", "Refresh")
+				table.add_row("SH", "Shift task")
+				table.add_row("SD", "Select day")
+				table.add_row("", "Exit")
+
+				self.console.print(Panel(table, title="Task Management Options", expand=False))
+
+			def process_command(self, choice):
+				if choice.lower() == 'mv':
+					task_id = self.console.input("[yellow]Enter task ID: ")
+					new_time = self.console.input("[yellow]Enter new time (HH:MM): ")
+					self.move_task(task_id, new_time)
+				elif choice.lower() == 'dr':
+					task_id = self.console.input("[yellow]Enter task ID: ")
+					new_duration = self.console.input("[yellow]Enter new duration (e.g., 1h30m): ")
+					self.change_duration(task_id, new_duration)
+				elif choice.lower() == 'rf':
+					self.refresh_tasks()
+				elif choice.lower() == 'sh':
+					shift_input = self.console.input("[yellow]Enter task ID and shift duration (e.g., '321 +15min' or '321 -1h'): ")
+					self.shift_task(shift_input)
+				elif choice.lower() == 'sd':
+					date = self.console.input("[yellow]Enter date (YYYY-MM-DD) or 'today' or 'tomorrow': ")
+					self.select_day(date)
+				elif choice.lower() == '':
+					exit()
+				else:
+					self.console.print(f"Unknown command: {choice}", style="bold red")
+
+			def move_task(self, task_id, new_time):
+				subprocess.run(f"task {task_id} modify due:{self.current_date}T{new_time}", shell=True)
+				self.console.print(f"Task {task_id} moved to {new_time}", style="bold green")
+				self.refresh_tasks()
+
+			def change_duration(self, task_id, new_duration):
+				subprocess.run(f"task {task_id} modify duration:{new_duration}", shell=True)
+				self.console.print(f"Duration for task {task_id} set to {new_duration}", style="bold green")
+				self.refresh_tasks()
+
+			def shift_task(self, shift_input):
+				try:
+					task_id, shift_duration = shift_input.split(maxsplit=1)
+					subprocess.run(f"task {task_id} modify due:due{shift_duration}", shell=True)
+					self.console.print(f"Task {task_id} shifted by {shift_duration}", style="bold green")
+					self.refresh_tasks()
+				except ValueError:
+					self.console.print("Invalid input format. Please use 'TASK_ID DURATION' (e.g., '321 +15min').", style="bold red")
+
+			def select_day(self, date):
+				if date.lower() == 'today':
+					self.current_date = datetime.now().date()
+				elif date.lower() == 'tomorrow':
+					self.current_date = datetime.now().date() + timedelta(days=1)
+				else:
+					try:
+						self.current_date = datetime.strptime(date, "%Y-%m-%d").date()
+					except ValueError:
+						self.console.print("Invalid date format. Please use YYYY-MM-DD.", style="bold red")
+						return
+				self.refresh_tasks()
+
+			def refresh_tasks(self):
+				self.tasks = get_tasks_for_day(self.current_date)
+
+			def create_calendar_view(self, tasks):
+				console = Console()
+				local_tz = pytz.timezone('Asia/Aden')  # Replace with your local timezone
+				current_end_time = datetime.strptime("00:00", "%H:%M")
+				current_end_time = local_tz.localize(current_end_time)
+
+				# Get pending task counts
+				project_counts = self.get_pending_counts(tasks, 'projects')
+				tag_counts = self.get_pending_counts(tasks, 'tags')
+
+				# Sort tasks by due time
+				sorted_tasks = sorted(tasks, key=lambda x: datetime.strptime(x['due'], "%Y%m%dT%H%M%SZ"))
+
+				# Group tasks by due time
+				grouped_tasks = defaultdict(list)
+				for task in sorted_tasks:
+					due_time = datetime.strptime(task['due'], "%Y%m%dT%H%M%SZ")
+					due_time = pytz.utc.localize(due_time).astimezone(local_tz)
+					grouped_tasks[due_time].append(task)
+
+				output = []
+				for due_time, tasks_at_time in grouped_tasks.items():
+					# If there's free time before these tasks, add a free time panel
+					if due_time > current_end_time:
+						free_time = (due_time - current_end_time).total_seconds() / 60
+						free_panel = Panel(
+							Text(f"Free Time: {format_duration(free_time)}", style="bold green"),
+							expand=False,
+							border_style="green",
+							padding=(0, 1)
+						)
+						output.append(f"{current_end_time.strftime('%H:%M')}\n")
+						output.append(free_panel)
+						current_end_time = due_time
+
+					# Calculate total duration and new end time for all tasks at this time
+					total_duration = sum(parse_duration(task.get('duration', 'PT60M')) for task in tasks_at_time)
+					new_end_time = max(current_end_time, due_time) + timedelta(minutes=total_duration)
+
+					# Create task content
+					task_content = Text()
+					for task in tasks_at_time:
+						task_duration = parse_duration(task.get('duration', 'PT60M'))
+						task_content.append(f"[{task['id']}] ", style="bold yellow")
+						task_content.append(f"{task['description']}\n", style="white")
+
+						if task.get('project'):
+							count = project_counts.get(task['project'], 0)
+							task_content.append(f"  Project: {task['project']} ({count} pending)\n", style="blue")
+
+						if task.get('tags'):
+							tags_str = ', '.join(f"{tag} ({tag_counts.get(tag, 0)} pending)" for tag in task['tags'])
+							task_content.append(f"  Tags: {tags_str}\n", style="magenta")
+
+						task_content.append(f"  Duration: {format_duration(task_duration)}\n", style="italic cyan")
+
+						# Check for chained tasks
+						if task.get('chained') == 'on' and 'chained_link' in task:
+							task_content.append(f"  Link #: {task['chained_link']}\n", style="bold red")
+
+						task_content.append("\n")
+
+					task_content.append(f"Total Duration: {format_duration(total_duration)}\n", style="bold cyan")
+					task_content.append(f"Ends at: {new_end_time.strftime('%H:%M')}", style="bold cyan")
+
+					task_panel = Panel(
+						task_content,
+						expand=False,
+						border_style="blue",
+						padding=(0, 1)
+					)
+
+					output.append(f"{due_time.strftime('%H:%M')}\n")
+					output.append(task_panel)
+
+					# Update current_end_time
+					current_end_time = new_end_time
+
+				# Add final free time panel if there's time left in the day
+				end_of_day = current_end_time.replace(hour=23, minute=59, second=59)
+				if current_end_time < end_of_day:
+					free_time = (end_of_day - current_end_time).total_seconds() / 60
+					free_panel = Panel(
+						Text(f"Free Time: {format_duration(free_time)}", style="bold green"),
+						expand=False,
+						border_style="green",
+						padding=(0, 1)
+					)
+					output.append(f"{current_end_time.strftime('%H:%M')}\n")
+					output.append(free_panel)
+
+				return output
+
+			def get_pending_counts(self, tasks, attribute):
+				counts = defaultdict(int)
+
+				if attribute == 'tags':
+					for task in tasks:
+						for tag in task.get('tags', []):
+							command = f"task tag:{tag} +PENDING count"
+							result = subprocess.run(command, shell=True, capture_output=True, text=True)
+							try:
+								count = int(result.stdout.strip())
+								counts[tag] = count
+							except ValueError:
+								print(f"Failed to parse count for tag {tag}: {result.stdout.strip()}")
+				elif attribute == 'projects':
+					for task in tasks:
+						project = task.get('project')
+						if project:
+							command = f"task project:{project} +PENDING count"
+							result = subprocess.run(command, shell=True, capture_output=True, text=True)
+							try:
+								count = int(result.stdout.strip())
+								counts[project] = count
+							except ValueError:
+								print(f"Failed to parse count for project {project}: {result.stdout.strip()}")
+
+				return counts
+
+		if __name__ == '__main__':
+			TaskOrganizer().run()
 
 
 # ------------------------------------------------------------------------------------
