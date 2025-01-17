@@ -1,5 +1,6 @@
-from taskw import TaskWarrior
-import json
+
+from tasklib import TaskWarrior, Task
+from taskw import TaskWarrior as Warrior
 import datetime
 import inquirer
 from colorama import init, Fore, Back, Style
@@ -15,55 +16,141 @@ import questionary
 from questionary import Style
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import FuzzyWordCompleter
+from prompt_toolkit.completion import FuzzyCompleter, WordCompleter
 from dateutil.tz import tzlocal
 import subprocess
 import argparse
 import os
 import calendar
-from datetime import date
+from datetime import date,time
 import texttable as tt
-import pandas as pd
+#import pandas as pd
 from fuzzywuzzy import process
+from rich.console import Console
+from rich.prompt import Prompt, Confirm
+from rich.table import Table
+from rich import print as rprint
+from rich.panel import Panel
+from rich.text import Text
+from rich import box
+import re
+from enum import Enum
 
+from itertools import groupby
+from operator import itemgetter
+
+
+
+from datetime import datetime, timedelta
+import sys
+
+try:
+    import ujson as json
+except ImportError:
+    import json
+
+import warnings
+warnings.filterwarnings('ignore')
+
+
+# for project trees --- Define lists of colors for levels and guide styles
+level_colors = ['bright_red', 'bright_green', 'bright_yellow', 'bright_blue', 'bright_magenta', 'bright_cyan', 'bright_white']
+guide_styles = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
+
+
+#local_tz = pytz.timezone('Europe/London')  # Replace with your local timezone
+local_tz = datetime.now().astimezone().tzinfo # Determine local timezone
+
+colors = ['grey93','honeydew2','hot_pink','hot_pink2','hot_pink3','indian_red','indian_red1','khaki1','khaki3','light_coral','light_cyan1','light_cyan3','light_goldenrod1','light_goldenrod2','light_goldenrod3','light_green','light_pink1','light_pink3','light_pink4','light_salmon1','light_salmon3','light_sea_green','light_sky_blue1','light_sky_blue3','light_slate_blue','light_slate_gray','light_slate_grey','light_steel_blue','light_steel_blue1','light_steel_blue3','light_yellow3','magenta','magenta1','magenta2','magenta3','medium_orchid','medium_orchid1','medium_orchid3','medium_purple','medium_purple1','medium_purple2','medium_purple3','medium_purple4','medium_spring_green','medium_turquoise','medium_violet_red','misty_rose1','misty_rose3','navajo_white1','navajo_white3','navy_blue','orange1','orange3','orange4','orange_red1','orchid','orchid1','orchid2','pale_green1','pale_green3','pale_turquoise1','pale_turquoise4','pale_violet_red1','pink1','pink3','plum1','plum2','plum3','plum4','purple','purple3','purple4','red','red1','red3','rosy_brown','royal_blue1','salmon1','sandy_brown','sea_green1','sea_green2','sea_green3','sky_blue1','sky_blue2','sky_blue3','slate_blue1','slate_blue3','spring_green1','spring_green2','spring_green3','spring_green4','steel_blue','steel_blue1','steel_blue3','tan','thistle1','thistle3','turquoise2','turquoise4','violet','wheat1','wheat4','white','yellow','yellow1','yellow2','yellow3','yellow4','bright_blue','bright_cyan','bright_green','bright_magenta','bright_red','bright_white','bright_yellow','cadet_blue','chartreuse1','chartreuse2','chartreuse3','chartreuse4','cornflower_blue','cornsilk1','cyan','cyan1','cyan2','cyan3','dark_blue','dark_cyan','dark_goldenrod','dark_green','dark_khaki','dark_magenta','dark_olive_green1','dark_olive_green2','dark_olive_green3','dark_orange','dark_orange3','dark_red','dark_sea_green','dark_sea_green1','dark_sea_green2','dark_sea_green3','dark_sea_green4','dark_slate_gray1','dark_slate_gray2','dark_slate_gray3','dark_turquoise','dark_violet','deep_pink1','deep_pink2','deep_pink3','deep_pink4','deep_sky_blue1','deep_sky_blue2','deep_sky_blue3','deep_sky_blue4','dodger_blue1','dodger_blue2','dodger_blue3','gold1','gold3']
+
+
+# Load project metadata
+script_directory = os.path.dirname(os.path.abspath(__file__))
+file_path = os.path.join(script_directory, "sultandb.json")
+
+
+
+
+from functools import lru_cache
+
+@lru_cache(maxsize=None)
+def load_sultandb(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            sultandb = json.load(file)
+    except FileNotFoundError:
+        sultandb = {"aors": [], "projects": []}
+    return sultandb['aors'], sultandb['projects']
+
+
+
+aors, projects = load_sultandb(file_path)
+
+def save_sultandb(file_path, aors, projects):
+    sultandb = {"aors": aors, "projects": projects}
+    with open(file_path, 'w', encoding='utf-8') as file:
+        json.dump(sultandb, file, default=str, indent=4)
+    # Invalidate the cache of load_sultandb
+    load_sultandb.cache_clear()
+
+
+
+warrior = Warrior()
+console = Console()
 
 def main():
-	# Map each command to its corresponding function
-	command_to_function = {
-		's': search_task,
-		'c': clear_data,
-		'b': basic_summary,
-		'd': detailed_summary,
-		'a' : all_summary,
-		'i': display_inbox_tasks,
-		'tl': display_due_tasks,
-		'ht': handle_task,
-		'td': print_tasks_for_selected_day,
-		'sp': call_and_process_task_projects,
-		'o' : display_overdue_tasks,
-		'rr': recurrent_report,
-		'z': eisenhower
-	}
-	
-	parser = argparse.ArgumentParser(description='Process some commands.')
-	parser.add_argument('command', metavar='CMD', type=str, nargs='?', default='',
-						help='A command to run')
+    # Map each command to its corresponding function
+    command_to_function = {
+        's': search_task,
+        'c': clear_data,
+        'b': basic_summary,
+        'd': detailed_summary,
+        'a': all_summary,
+        'i': display_inbox_tasks,
+        'tl': display_due_tasks,
+        'ht': handle_task,
+        'tc': task_control_center,
+        'td': print_tasks_for_selected_day,
+        'sp': call_and_process_task_projects,
+        'o': display_overdue_tasks,
+        'rr': recurrent_report, # includes only the period type recurrent tasks
+        'z': eisenhower,
+        'pi': greeting_pi,
+		'tm': task_manager,
+		'n': next_summary,
+		'rp': review_projects,
+		'to':task_organizer,
+		'mp':multiple_projects_view
+    }
 
-	args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Process some commands.')
+    parser.add_argument('command', metavar='CMD', type=str, nargs='?', default='',
+                        help='A command to run')
+    parser.add_argument('arg', metavar='ARG', type=str, nargs='?', default=None,
+                        help='Optional argument for the command')
 
-	if args.command:
-		# Call the corresponding function if a command argument is provided
-		command_to_function[args.command]()
-	else:
-		# Continue to the interactive prompt if no command argument is provided
-		import os
-		script_directory = os.path.dirname(os.path.abspath(__file__))
-		file_path = os.path.join(script_directory, "sultandb.json")
-		interactive_prompt(file_path)
+    args = parser.parse_args()
+
+    if args.command:
+        if args.command in command_to_function:
+            if args.arg:
+                # If a secondary argument is provided, pass it to the function
+                command_to_function[args.command](args.arg)
+            else:
+                # Call the corresponding function if no secondary argument is provided
+                command_to_function[args.command]()
+        else:
+            print("Invalid command provided.")
+    else:
+        # Continue to the interactive prompt if no command argument is provided
+        script_directory = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(script_directory, "sultandb.json")
+        interactive_prompt(file_path)
 
 
 
 try:
-	delimiter = ("=" * 30)
+	
 
 	def print_calendar_with_marked_day(year, month, day):
 			cal = calendar.TextCalendar(firstweekday=calendar.MONDAY)
@@ -96,11 +183,104 @@ try:
 
 
 			
-			
+	def sync_sultandb_with_taskwarrior(file_path):
+		# import os
+		# import json
+		# import subprocess
+
+		# Load existing data from sultandb.json
+		try:
+			with open(file_path, 'r', encoding='utf-8') as file:
+				sultandb = json.load(file)
+		except FileNotFoundError:
+			sultandb = {"aors": [], "projects": []}
+
+		aors = sultandb.get('aors', [])
+		projects = sultandb.get('projects', [])
+
+		# Fetch projects from Taskwarrior
+		command = ['task', '_projects']
+		result = subprocess.run(command, stdout=subprocess.PIPE)
+		task_projects = result.stdout.decode('utf-8').splitlines()
+
+		# Separate AoRs and normal projects
+		task_aors = [p for p in task_projects if p.startswith("AoR.")]
+		task_projects = [p for p in task_projects if not p.startswith("AoR.")]
+
+		# Create sets for fast lookup
+		existing_aor_names = set(aor['name'] for aor in aors)
+		existing_project_names = set(project['name'] for project in projects)
+
+		# Add new AoRs from Taskwarrior
+		new_aors = []
+		for aor_name in task_aors:
+			aor_name_without_prefix = aor_name[4:]  # Remove "AoR." prefix
+			if aor_name_without_prefix not in existing_aor_names:
+				new_aor = {
+					'name': aor_name_without_prefix,
+					'description': '',
+					'standard': '',
+					'annotations': [],
+					'workLogs': [],
+					'status': 'Active'
+				}
+				aors.append(new_aor)
+				new_aors.append(aor_name_without_prefix)
+
+		# Add new projects from Taskwarrior
+		new_projects = []
+		for project_name in task_projects:
+			if project_name not in existing_project_names:
+				new_project = {
+					'name': project_name,
+					'description': '',
+					'outcome': '',
+					'annotations': [],
+					'workLogs': [],
+					'status': 'Active'
+				}
+				projects.append(new_project)
+				new_projects.append(project_name)
+
+		# Update status of existing AoRs
+		task_aor_names = set(aor[4:] for aor in task_aors)  # Remove "AoR." prefix
+		for aor in aors:
+			if aor['name'] in task_aor_names:
+				if aor.get('status') != 'Active':
+					aor['status'] = 'Active'
+			else:
+				if aor.get('status') != 'Completed':
+					aor['status'] = 'Completed'
+
+		# Update status of existing projects
+		task_project_names = set(task_projects)
+		for project in projects:
+			if project['name'] in task_project_names:
+				if project.get('status') != 'Active':
+					project['status'] = 'Active'
+			else:
+				if project.get('status') != 'Completed':
+					project['status'] = 'Completed'
+
+		# Save the updated sultandb data
+		sultandb['aors'] = aors
+		sultandb['projects'] = projects
+
+		with open(file_path, 'w', encoding='utf-8') as file:
+			json.dump(sultandb, file, indent=4)
+
+		# Print status message
+		print("Synchronization complete.")
+		if new_aors:
+			print(f"Added new AoRs: {', '.join(new_aors)}")
+		if new_projects:
+			print(f"\nAdded new projects: {', '.join(new_projects)}\n")
+		if not new_aors and not new_projects:
+			print("\nNo new AoRs or projects were added.\n")
+				
 			
 			
 	def display_overdue_tasks():
-		warrior = TaskWarrior()
 		tasks = warrior.load_tasks()
 		print(colored("Overdue Tasks", 'yellow', attrs=['bold']))
 		include_recurrent = questionary.confirm(
@@ -111,7 +291,7 @@ try:
 			tasks = [task for task in tasks['pending'] if 'recur' not in task]
 
 		# Determine local timezone
-		local_tz = datetime.now().astimezone().tzinfo
+		#local_tz = datetime.now().astimezone().tzinfo
 
 		# Filter tasks for overdue tasks only
 		overdue_tasks = []
@@ -134,12 +314,17 @@ try:
 		if overdue_tasks:
 			for task in overdue_tasks:
 				task_id = colored(f"{task['id']}", 'yellow')
+				if task.get('value'):
+					task_value = colored(f"{int(task['value'])}", 'red', attrs=['bold'])
+				else:
+					task_value = ""
+
 				description = colored(task['description'], 'cyan')
 				tag = colored(','.join(task.get('tags', [])), 'red', attrs=['bold'])  # Join tags with comma
 				project = colored(task.get('project', ''), 'blue', attrs=['bold'])
 				time_remaining = colored(task.get('time_remaining', ''), 'green', attrs=['bold'])  # Display time remaining
 
-				print(f"{task_id} {description} {tag} {project} -{time_remaining}")
+				print(f"{task_id} {description} {task_value} {tag} {project} -{time_remaining}")
 
 				if 'annotations' in task:  # Ensure annotations are in the task
 					for annotation in task['annotations']:
@@ -197,7 +382,7 @@ try:
 			date = datetime.now().date()
 			print(f"Selected tasks for {date}")
 		
-		w = TaskWarrior()
+		w = Warrior()
 		pending_tasks = w.load_tasks()['pending']
 		completed_tasks = w.load_tasks()['completed']
 		deleted_tasks = get_deleted_tasks_due_today(date)
@@ -285,7 +470,7 @@ try:
 
 
 	def search_task():
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		include_completed = questionary.confirm("Include completed tasks in the search?",default=False).ask()
@@ -318,9 +503,9 @@ try:
 
 
 	def display_inbox_tasks():
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()['pending']
-		delimiter = ('=' * 60)
+		delimiter = ('-' * 40)
 		# Filter tasks with the tag "in"
 		inbox_tasks = [task for task in tasks if 'in' in task.get('tags', [])]
 
@@ -346,39 +531,20 @@ try:
 		print("Please enter the task command:")
 		print("Examples:")
 		print("'223,114,187 done' - Marks tasks 223, 114, and 187 as done.")
-		print(" The operation will be done without asking for confirmation!.")
+		#print("!!!! The operation will be done without asking for confirmation!.")
 		print("To return to the main menu, press 'Enter'.\n")
+		print("----------------------------------------------\n")
 
 		while True:
 			task_command = input()
 			if task_command.lower() == '':
 				return
 			else:
-				# Assuming `execute_task_command` is a function that passes the command to TaskWarrior
-				execute_task_command(task_command)
+				subprocess.run(f"task {task_command}",shell=True)
 
-	def execute_task_command(task_command):
-		command = 'yes | task ' + task_command
-
-		try:
-			with subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
-				try:
-					stdout, stderr = proc.communicate(timeout=10)
-				except subprocess.TimeoutExpired:
-					print("Command timed out.")
-					proc.kill()
-					stdout, stderr = proc.communicate()
-
-				if stdout:
-					print(stdout)
-				if stderr:
-					print(stderr)
-
-		except Exception as e:
-			print(f"An error occurred while executing the task command: {e}")
 
 	def display_due_tasks():
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		include_recurrent = questionary.confirm(
@@ -389,7 +555,7 @@ try:
 			tasks = [task for task in tasks['pending'] if 'recur' not in task]
 
 		# Determine local timezone
-		local_tz = datetime.now().astimezone().tzinfo
+		#local_tz = datetime.now().astimezone().tzinfo
 
 		# Define time frames
 		now = datetime.now(local_tz)
@@ -466,7 +632,7 @@ try:
 				print(colored(name, 'yellow', attrs=['bold']))
 				for task in tasks:
 					task_id = colored(f"[{task['id']}]", 'yellow')
-					description = colored(task['description'], 'cyan')
+					description = colored(task['description'], 'white')
 					tag = colored(','.join(task.get('tags', [])), 'red', attrs=['bold'])  # Join tags with comma
 					project = colored(task.get('project', ''), 'blue', attrs=['bold'])
 					time_remaining = colored(task.get('time_remaining', ''), 'green', attrs=['bold'])  # Display time remaining
@@ -478,6 +644,33 @@ try:
 							entry_date = datetime.strptime(annotation['entry'], '%Y%m%dT%H%M%SZ').date()
 							print(f"\t{Fore.CYAN}{entry_date}{Fore.YELLOW}: {annotation['description']}")
 				print('=' * 60)
+
+		# # Display tasks # each category in its own table
+		# for name, tasks in list(categorized_tasks.items()):
+		# 	if tasks:
+		# 		table = Table(title=Text(name, style="yellow bold"), expand=True)
+		# 		table.add_column("ID", style="yellow", no_wrap=True)
+		# 		table.add_column("Description", style="cyan")
+		# 		table.add_column("Tags", style="red")
+		# 		table.add_column("Project", style="blue")
+		# 		table.add_column("Time Remaining", style="green")
+
+		# 		for task in tasks:
+		# 			task_id = f"[{task['id']}]"
+		# 			description = task['description']
+		# 			tags = ','.join(task.get('tags', []))
+		# 			project = task.get('project', '')
+		# 			time_remaining = task.get('time_remaining', '')
+
+		# 			table.add_row(task_id, description, tags, project, time_remaining)
+
+		# 			if 'annotations' in task:
+		# 				for annotation in task['annotations']:
+		# 					entry_date = datetime.strptime(annotation['entry'], '%Y%m%dT%H%M%SZ').date()
+		# 					table.add_row("", Text(f"{entry_date}: {annotation['description']}", style="dim italic"), "", "", "")
+
+		# 		console.print(Panel(table, expand=False))
+		# 		console.print()
 
 	def get_item_info(user_input):
 		print(user_input + "this needs work")
@@ -493,19 +686,20 @@ try:
 				item['status'] = 'Completed'
 
 	def get_creation_date(item_name):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 		for task in tasks['pending']:
 			project = task.get('project')
 			if project and (project == item_name or project.startswith("AoR." + item_name)):
 				created = task.get('entry')
 				if created:
+					print(datetime.strptime(created, "%Y%m%dT%H%M%SZ"))
 					return datetime.strptime(created, "%Y%m%dT%H%M%SZ")
 
 		return None
 
 	def get_last_modified_date(item_name):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 		last_modified = None
 		for task in tasks['pending']:
@@ -521,7 +715,7 @@ try:
 		return last_modified
 
 	def get_tags_for_item(item_name):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 		tags = {}
 		for task in tasks['pending']:
@@ -554,6 +748,8 @@ try:
 			field_value = item.get(
 				'standard') if 'outcome' not in item else item.get('outcome')
 			print(f"{Fore.BLUE}{field_name}: {Fore.YELLOW}{field_value}{Fore.RESET}")
+			if field_name == "Outcome":
+				print("Defining what 'DONE' means.")
 
 		creation_date = get_creation_date(item['name'])
 		if creation_date:
@@ -590,7 +786,7 @@ try:
 			if tag != 'Completed':
 				print(f" - {Fore.BLACK}{Back.YELLOW}{tag}{Fore.RESET}{Back.RESET} ({count} task{'s' if count > 1 else ''})")
 				# Load tasks
-				warrior = TaskWarrior()
+				
 				tasks = warrior.load_tasks()['pending']
 				# Print tasks with the current tag and same project/AoR
 				for task in tasks:
@@ -640,29 +836,59 @@ try:
 					f" - {Fore.YELLOW}{timestamp}{Fore.RESET}: {Fore.YELLOW}{content}{Fore.RESET}")
 
 
-	def view_data_with_tree(item, tags,item_name):
-		print(f"{Fore.BLUE}Name: {Fore.YELLOW}{item['name']}{Fore.RESET}")
-		print(
-			f"{Fore.BLUE}Description: {Fore.YELLOW}{item.get('description', '')}{Fore.RESET}")
+	def execute_taskwarrior_command(command):
+		"""Execute a TaskWarrior command and return its output."""
+		try:
+			# Start the process
+			proc = subprocess.Popen(
+				command, shell=True, text=True,
+				stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+			)
 
-		# Get the number of pending tasks
-		pending_tasks = 0
-		for tag, count in tags.items():
-			if tag != 'Completed':
-				pending_tasks += count
+			while True:
+				# Read from stdout and stderr
+				stdout_line = proc.stdout.readline()
+				stderr_line = proc.stderr.readline()
 
-		# Get the number of completed tasks
-		completed_tasks = tags.get('Completed', 0)
+				# Display stdout and stderr to the user
+				if stdout_line:
+					sys.stdout.write(stdout_line)
+					sys.stdout.flush()
+				if stderr_line:
+					sys.stderr.write(stderr_line)
+					sys.stderr.flush()
 
-		print(f"{Fore.BLUE}Pending: {Fore.YELLOW}{pending_tasks}{Fore.RESET} | "
-			  f"{Fore.BLUE}Completed: {Fore.YELLOW}{completed_tasks}{Fore.RESET}")
-		print(delimiter)
-		if 'standard' in item:
-			field_name = "Standard" if 'outcome' not in item else "Outcome"
-			field_value = item.get(
-				'standard') if 'outcome' not in item else item.get('outcome')
-			print(f"{Fore.BLUE}{field_name}: {Fore.YELLOW}{field_value}{Fore.RESET}")
+				# Check if there's a prompt in stderr for user input
+				if stderr_line and 'prompt' in stderr_line.lower():
+					user_input = input("Please provide input: ")
+					proc.stdin.write(user_input + "\n")
+					proc.stdin.flush()
 
+				# Check if process is still running
+				if proc.poll() is not None:
+					break
+
+			# Get the final output
+			stdout, stderr = proc.communicate()
+
+			if stdout:
+				return stdout.strip()  # Remove extra whitespace
+			if stderr:
+				print(f"Error: {stderr.strip()}")
+
+		except Exception as e:
+			print(f"An error occurred while executing the TaskWarrior command: {e}")
+
+		return ""
+
+	# def get_task_count(item_name, status):
+	# 	"""Get the count of tasks by status for a specific project."""
+	# 	command = f"task count project:{item_name} status:{status}"
+	# 	return execute_taskwarrior_command(command)
+
+	def view_project_metadata(item, tags, item_name):
+		console = Console()
+		# Display creation date
 		creation_date = get_creation_date(item['name'])
 		if creation_date:
 			current_datetime = datetime.now()
@@ -670,12 +896,11 @@ try:
 			creation_days_remaining = creation_time_difference.days
 			creation_time_remaining = creation_time_difference.seconds
 			creation_time_prefix = "-" if creation_days_remaining > 0 else "+"
-			creation_time_remaining_formatted = str(
-				timedelta(seconds=abs(creation_time_remaining)))
+			creation_time_remaining_formatted = str(timedelta(seconds=abs(creation_time_remaining)))
 			creation_time_difference_formatted = f"({creation_time_prefix}{abs(creation_days_remaining)} days, {creation_time_remaining_formatted})"
-			print(
-				f"{Fore.BLUE}Creation Date: {Fore.YELLOW}{creation_date} {creation_time_difference_formatted}{Fore.RESET}")
+			console.print(Panel(f"[blue]Creation Date: [yellow]{creation_date.strftime('%Y-%m-%d %H:%M')} {creation_time_difference_formatted}[/yellow]", title="Creation Date", expand=False))
 
+		# Display last modified date
 		last_modified_date = get_last_modified_date(item['name'])
 		if last_modified_date:
 			current_datetime = datetime.now()
@@ -683,49 +908,114 @@ try:
 			last_modified_days_remaining = last_modified_time_difference.days
 			last_modified_time_remaining = last_modified_time_difference.seconds
 			last_modified_time_prefix = "-" if last_modified_days_remaining > 0 else "+"
-			last_modified_time_remaining_formatted = str(
-				timedelta(seconds=abs(last_modified_time_remaining)))
+			last_modified_time_remaining_formatted = str(timedelta(seconds=abs(last_modified_time_remaining)))
 			last_modified_time_difference_formatted = f"({last_modified_time_prefix}{abs(last_modified_days_remaining)} days, {last_modified_time_remaining_formatted})"
-			print(f"{Fore.BLUE}Last Modified Date: {Fore.YELLOW}{last_modified_date} {last_modified_time_difference_formatted}{Fore.RESET}")
-		print(delimiter)
-		if 'outcome' in item:
-			print(
-				f"{Fore.BLUE}Outcome: {Fore.YELLOW}{item['outcome']}{Fore.RESET}")
+			console.print(Panel(f"[blue]Last Modified Date: [yellow]{last_modified_date.strftime('%Y-%m-%d %H:%M')} {last_modified_time_difference_formatted}[/yellow]", title="Last Modified Date", expand=False))
 
-		print(delimiter)
+		# Display item name and description
+		console.print(Panel(f"[blue]Name: [yellow]{item['name']}[/yellow]", title="Item Name", expand=False))
+		console.print(Panel(f"[blue]Description:\n [cornflower_blue]{item.get('description', '')}[/cornflower_blue]", title="Description", expand=False))
+
+		# # Display task counts
+		# pending_tasks = get_task_count(item_name, 'pending')
+		# completed_tasks = get_task_count(item_name, 'completed')
+		# deleted_tasks = get_task_count(item_name, 'deleted')
+		
+		# task_counts = Text.assemble(
+		# 	("Pending: ", "yellow"), (f"{pending_tasks}", "yellow"), (" | Completed: ", "yellow"), (f"{completed_tasks}", "green"), (" | Deleted: ", "yellow"), (f"{deleted_tasks}", "blue")
+		# )
+		# console.print(Panel(task_counts, title="Task Counts", expand=False))
+		
+		# console.print("\n")
+
+		# Display standard or outcome
+		if 'standard' in item or 'outcome' in item:
+			field_name = "Standard" if 'outcome' not in item else "Outcome"
+			field_value = item.get('standard') if 'outcome' not in item else item.get('outcome')
+			console.print(Panel(f"[blue]{field_name}: [yellow]{field_value}[/yellow]", title=field_name, expand=False))
+
+
+		# # Display outcome
+		# if 'outcome' in item:
+		# 	console.print(Panel(f"[blue]Outcome: [yellow]{item['outcome']}[/yellow]", title="Outcome", expand=False))
+
+		# Display annotations
 		if 'annotations' in item:
-			print(f"\n{Fore.BLUE}Annotations:{Fore.RESET}")
-			for annotation in item['annotations']:
-				timestamp = annotation.get('timestamp')
+			table = Table(title="Annotations", box=box.SIMPLE)
+			table.add_column("Timestamp", style="dim", width=20)
+			table.add_column("Content", style="yellow")
+			
+			for i, annotation in enumerate(item['annotations']):
+				timestamp_str = annotation.get('timestamp')
 				content = annotation.get('content', '')
-				print(
-					f" - {Fore.YELLOW}{timestamp}{Fore.RESET}: {Fore.YELLOW}{content}{Fore.RESET}")
-		print(delimiter)
-		if 'workLogs' in item:
-			print(f"{Fore.BLUE}Work Logs:{Fore.RESET}")
-			for work_log in item['workLogs']:
-				timestamp = work_log.get('timestamp')
-				content = work_log.get('content', '')
-				print(
-					f" - {Fore.YELLOW}{timestamp}{Fore.RESET}: {Fore.YELLOW}{content}{Fore.RESET}")
-		print(delimiter)
-		project_summary(item_name)
-		print(delimiter)
 
-	def get_multiline_input(prompt):
-		print(prompt)
-		lines = []
-		while True:
-			line = input()
-			if line:
-				lines.append(line)
-			else:
-				break
-		return '\n'.join(lines)
+				# Remove milliseconds if present
+				if '.' in timestamp_str:
+					timestamp_str = timestamp_str.split('.')[0]
+
+				row_style = "gold1" if i % 2 == 0 else "cornflower_blue"
+				table.add_row(timestamp_str, content, style=row_style)
+			
+			console.print(table)
+		
+		# Display work logs
+		if 'workLogs' in item:
+			table = Table(title="Work Logs", box=box.SIMPLE)
+			table.add_column("Timestamp", style="dim", width=20)
+			table.add_column("Content", style="yellow")
+			
+			for i, work_log in enumerate(item['workLogs']):
+				timestamp_str = work_log.get('timestamp')
+				content = work_log.get('content', '')
+
+				# Remove milliseconds if present
+				if '.' in timestamp_str:
+					timestamp_str = timestamp_str.split('.')[0]
+
+				row_style = "deep_pink1" if i % 2 == 0 else "cornflower_blue"
+				table.add_row(timestamp_str, content, style=row_style)
+			
+			console.print(table)
+
+
+
+
+
+	from prompt_toolkit import PromptSession
+	from prompt_toolkit.key_binding import KeyBindings
+	from prompt_toolkit.application import get_app
+	from prompt_toolkit.filters import Condition
+	from prompt_toolkit.shortcuts import prompt
+	from prompt_toolkit.shortcuts.prompt import CompleteStyle
+	from prompt_toolkit.formatted_text import HTML
+	from prompt_toolkit.styles import Style
+	import inquirer
+
+
+	def get_multiline_input(prompt_message):
+		session = PromptSession()
+		bindings = KeyBindings()
+
+		@bindings.add('c-c')
+		def _(event):
+			event.app.exit()
+
+		@bindings.add('c-s')
+		def _(event):
+			event.app.exit(result=event.app.current_buffer.text)
+
+		return session.prompt(HTML(f'<skyblue>{prompt_message}</skyblue>\n> '),
+							multiline=True,
+							key_bindings=bindings,
+							complete_while_typing=False,
+							style=Style.from_dict({
+								'prompt': 'bg:#008800 #ffffff'
+							}))
 
 	def update_item(items, item_index, file_path, specific_field, aors, projects):
 		commands = ['Add description', 'Add annotation',
 					'Add work log entry', f'Add {specific_field}', 'Go back']
+		print("Use CTRL+C to exit or CTRL+S to exit and save from edit screen.")
 		while True:
 			questions = [
 				inquirer.List('command',
@@ -770,8 +1060,7 @@ try:
 			elif answers['command'] == 'Go back':
 				break
 
-
-				
+					
 
 
 	def call_and_process_task_projects():
@@ -821,204 +1110,787 @@ try:
 			output_lines.append(output_line)  # Add each processed project to the list
 
 			last_level = level
-		
+		print(output_lines)
 		return output_lines  # Return the list of all processed projects
 
-	def project_summary(selected_item):
+
+
+	def dependency_tree(selected_item):
 		from rich import print
 		from rich.tree import Tree
 		from rich.text import Text
-		from rich.console import Console
-		from rich.color import Color
+		
+		from datetime import datetime
+		import pytz
+		from dateutil.parser import parse
 
-		console = Console()
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
-
 		selected_project = selected_item
-		project_data = defaultdict(lambda: defaultdict(list))
+
+		task_dict = {}
 		now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+		all_tasks = {task['uuid']: task for task in tasks['pending']}
+		uuid_to_real_id = {task['uuid']: task['id'] for task in tasks['pending']}
 
-		# Create a dictionary to store the dependencies
-		task_dependencies = {}
+		def is_relevant(task):
+			project = task.get('project')
+			return project and (project == selected_project or project.startswith(selected_project + '.'))
 
-		for task in tasks['pending']:
-			project = task.get('project', None)
-			if not project or not (project == selected_project or project.startswith(selected_project + '.')):
-				continue
-
-			annotations = task.get('annotations', [])
-			tags = task.get('tags', [])
-			description = task.get('description', '')
-			task_id = task.get('id', '')
-			due_date_str = task.get('due')
-			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
-			time_remaining = due_date - now if due_date else None
-			time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+		def collect_tasks(task_uuid, visited=set()):
+			if task_uuid in visited or task_uuid not in all_tasks:
+				return
+			visited.add(task_uuid)
+			task = all_tasks[task_uuid]
 			dependencies = task.get('depends', [])
 
-			# Store the dependencies in the task_dependencies dictionary
-			for dependency in dependencies:
-				if dependency not in task_dependencies:
-					task_dependencies[dependency] = []
-				task_dependencies[dependency].append(task['uuid'])
+			task_dict[task_uuid] = {
+				'project': task.get('project'),
+				'description': task.get('description', ''),
+				'due_date': task.get('due'),
+				'time_remaining': calculate_time_remaining(task.get('due'), now),
+				'annotations': task.get('annotations', []),
+				'tags': task.get('tags', []),
+				'dependencies': dependencies
+			}
 
-			if tags:
-				for tag in tags:
-					project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task['uuid']])
-			else:
-				project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str, annotations, task['uuid']])
+			for dep_uuid in dependencies:
+				collect_tasks(dep_uuid, visited)
 
-		tree = Tree("Saikou", style="green bold")
+		for task_uuid, task in all_tasks.items():
+			if is_relevant(task):
+				collect_tasks(task_uuid)
 
-		for project, tag_data in project_data.items():
-			project_levels = project.split(".")
-			project_branch = tree
+		tree = Tree(f"Dependency Tree: {selected_project}", style="green")
+		#local_tz = datetime.now().astimezone().tzinfo
 
-			for level_idx, level in enumerate(project_levels):
-				if level not in [child.label.plain for child in project_branch.children]:
-					project_branch = project_branch.add(Text(level, style=f'{colors[level_idx % len(colors)]}bold'))
-				else:
-					project_branch = next(child for child in project_branch.children if child.label.plain == level)
+		def add_task_to_tree(task_uuid, parent_branch):
+			if task_uuid not in task_dict:
+				return
+			task = task_dict[task_uuid]
+			real_id = uuid_to_real_id[task_uuid]
+			task_description = task['description']
+			task_id_text = Text(f"[{real_id}] ", style="red")
+			task_description_text = Text(task_description, style="white")
+			task_id_text.append(task_description_text)
 
-			for tag, tasks_data in sorted(tag_data.items()):
-				tag_color = 'blue' if not project.startswith("AoR.") else 'cyan'
-				tag_branch = project_branch.add(Text(tag, style=f'{tag_color} bold'))
+			due_date = task.get('due_date')
+			if due_date:
+				formatted_due_date = parse(due_date).strftime('%Y-%m-%d')
+				time_remaining, time_style = calculate_time_remaining(due_date, now)
+				due_text = Text(f" {formatted_due_date} ", style="blue")
+				time_remaining_text = Text(time_remaining, style=time_style)
+				due_text.append(time_remaining_text)
+				task_id_text.append(due_text)
 
-				for data in tasks_data:
-					task_data = data[0]
-					task_id, description = (task_data.split(" ", 1) + [""])[: 2]
-					due_date = data[1] if len(data) > 1 else None
-					try:
-						due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
-					except ValueError:
-						due_date_formatted = ""
-					time_remaining = data[2] if len(data) > 2 else None
-					task_uuid = data[4]  # Get the task UUID
+			# Display tags in red bold
+			if task.get('tags'):
+				tags_text = Text(f" +{', '.join(task['tags'])} ", style="bold red")
+				task_id_text.append(tags_text)
 
-					# If time_remaining exists, format with bold style
-					if time_remaining:
-						description_text = Text(description, style="white")
-					else:  # If not, just add color without bold style
-						description_text = Text(description, style="red")
-					task_id_text = Text(task_id, style="red bold")
-					due_date_text = Text(due_date_formatted, style="blue bold")
-					time_remaining_text = Text(time_remaining, style="green bold")
+			# Display project in blue bold if different from the selected or if no project is assigned
+			if task.get('project') != selected_project:
+				project_text = Text(f" {task.get('project', 'No Project')} ", style="magenta")
+				task_id_text.append(project_text)
 
-					# Create text line without adding it to tag_branch
-					text_line = task_id_text + Text(" ") + description_text + Text(" ") + due_date_text + Text(" ") + time_remaining_text
+			task_branch = parent_branch.add(task_id_text)
 
-					# Now add the text_line to tag_branch
-					task_branch = tag_branch.add(text_line)
+			annotations = task.get('annotations', [])
+			if annotations:
+				annotation_branch = task_branch.add(Text("Annotations:", style="white"))
+				for annotation in annotations:
+					entry_datetime = parse(annotation['entry'])
+					if entry_datetime.tzinfo is None or entry_datetime.tzinfo.utcoffset(entry_datetime) is None:
+						entry_datetime = entry_datetime.replace(tzinfo=local_tz)
+					else:
+						entry_datetime = entry_datetime.astimezone(local_tz)
+					annotation_text = Text(f"{entry_datetime.strftime('%Y-%m-%d %H:%M:%S')} - {annotation['description']}", style="dim white")
+					annotation_branch.add(annotation_text)
 
-					# Add dependent tasks as children
-					if task_uuid in task_dependencies:
-						for dependent_task_uuid in task_dependencies[task_uuid]:
-							dependent_task = next((task for task in tasks['pending'] if task['uuid'] == dependent_task_uuid), None)
-							if dependent_task:
-								dependent_description = dependent_task.get('description', '')
-								dependent_text = Text(f"{dependent_task_uuid} {dependent_description}", style="yellow")
-								task_branch.add(dependent_text)
+			for dep_uuid in task['dependencies']:
+				add_task_to_tree(dep_uuid, task_branch)
 
-					annotations = data[3] if len(data) > 3 else []
-					if annotations:
-						for annotation in annotations:
-							annotation_description = annotation.get('description', '')
-							annotation_entry = annotation.get('entry', '')
-							annotation_entry_date = datetime.strptime(annotation_entry, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d")
-							annotation_text = f"[magenta]{annotation_entry_date}[/magenta][yellow] {annotation_description}[/yellow]"
-							task_branch.add(annotation_text)
+		for task_uuid in task_dict:
+			if not any(task_uuid in task_dict[dep_uuid]['dependencies'] for dep_uuid in task_dict):
+				add_task_to_tree(task_uuid, tree)
 
 		console.print(tree)
-		
+
+
+	def calculate_time_remaining(due_date_str, now):
+		if due_date_str:
+			due_date = parse(due_date_str)
+			time_remaining = due_date - now
+			if time_remaining.total_seconds() >= 0:
+				time_style = "green"
+			else:
+				time_style = "red"
+
+			# Formatted string to include days, hours, and minutes
+			days = time_remaining.days
+			seconds = time_remaining.seconds
+			hours, remainder = divmod(seconds, 3600)
+			minutes = remainder // 60
+
+			if days or hours or minutes:
+				formatted_time = f"{days}d {hours}h {minutes}m" if days else f"{hours}h {minutes}m"
+			else:
+				formatted_time = "0m"  # Show 0 minutes if time remaining is very short
+
+			return formatted_time, time_style
+		return None  # Return None when no due date
+
+
+
+
+
+
+
 	def search_project(project_list):
-		# Load from SultanDB
-
-		
-		script_directory = os.path.dirname(os.path.abspath(__file__))
-		file_path = os.path.join(script_directory, "sultandb.json")
-		aors, projects = load_sultandb(file_path)
-
-		# Sync with TaskWarrior to update projects and AoRs
-		active_aors, _, active_projects, _ = sync_with_taskwarrior(aors, projects, file_path)
-
-		# Combine active and inactive projects and AoRs
-		all_items = active_projects + active_aors
-
-		# Create a list of all project and AoR names
-		item_names = [item['name'] for item in all_items]
-
-		# Create a fuzzy completer with all project and AoR names
-		#print ("Debug:" + project_list)
 		completer = FuzzyWordCompleter(project_list)
 
-		# Prompt the user for a project or AoR name
-		item_name = prompt("Enter a project or AoR name: ", completer=completer)
-		#print(item_name)
-		closest_match = process.extractOne(item_name, [item['name'] for item in all_items])
-		#print(closest_match)
-		if closest_match:
-			# If a match was found, retrieve the item from all_items
-			selected_item = next((item for item in all_items if item['name'] == closest_match[0]), None)
+		# Define the style for the completer
+		style = Style.from_dict({
+			'completion-menu.completion': 'bg:black black green', 
+		})
 
-			# Run the project_summary with the selected project
-			if selected_item:
-				print(f"Name: {selected_item['name']}")
-				tags=get_tags_for_item(selected_item['name'])
-				view_data_with_tree(selected_item, tags,item_name)
+		# Prompt the user for a project or AoR name with custom styles
+		item_name = prompt("Enter a project or AoR name: ", completer=completer, style=style)
 
-				while True:  # Run until a non-refresh option is selected
-					# Ask the user if they want to update the project or refresh
-					action = questionary.select("What do you want to do next?", choices=["Refresh","Search another project","Handle tasks", "Update","Exit"]).ask()
-					
-					# CTRL+C actionx
-					action = "Exit" if action is None else action
+		# Run the dependency_tree with the selected project
+		console = Console()
+		if item_name == 'mp':
+			print("Right, lets get to work and getting things done!")
+			multiple_projects_view()
+		else:
+			display_tasks(f"task project:{item_name} +PENDING export")
 
-					if action == "Update":
-						if item_name.startswith("AoR."):
-							specific_field = "standard"
-						else:
-							specific_field = "outcome"
+		while True:
+			console.print("\n" + "-:" * 40)
+			
+			# Create a table for menu options
+			table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+			table.add_column("Option", style="orange_red1", no_wrap=True)
+			table.add_column("Description", style="light_sea_green")
 
-						update_item(all_items, all_items.index(selected_item), file_path, specific_field, aors, projects)
-						view_data_with_tree(selected_item, tags,item_name) #refresh after updating the data
-						#break  # Break the loop after updating
-					elif action == "Search another project":
-						call_and_process_task_projects()
-					elif action == "Handle tasks":
-						handle_task()
-					elif action == "Refresh":
-						view_data_with_tree(selected_item, tags,item_name)  # Refresh and show data again
-					elif action == "Exit":
-						print("Exit")
-						break
+			# Project Management options
+			table.add_row("", "[bold underline]Project Management:[/bold underline]")
+			table.add_row("R", "Refresh")
+			table.add_row("DT", "Display dependency tree")
+			table.add_row("SD", "Set dependencies")
+			table.add_row("RD", "Remove dependencies")
+			table.add_row("SP", "Search another project")
+			table.add_row("MP", "Display multiple projects")
+			table.add_row("MA", "Main menu")
+			table.add_row("", "")  # Separator
+
+			# Update Metadata options
+			table.add_row("", "[bold underline]Update Metadata:[/bold underline]")
+			table.add_row("UD", "Update Description")
+			table.add_row("UO", "Update Standard/Outcome")
+			table.add_row("AA", "Add Annotation")
+			table.add_row("AW", "Add Work Log")
+			table.add_row("SYDB", "Sync sultanDB to TW DB")
+			table.add_row("", "")  # Separator
+
+			# Task Management options
+			table.add_row("", "[bold underline]Task Management:[/bold underline]")
+			table.add_row("TW", "TW prompt")
+			table.add_row("TM", "Task Manager")
+			table.add_row("NT", "Add new task")
+			table.add_row("AN", "Annotate task")
+			table.add_row("TD", "Mark task as completed")
+			table.add_row("DD", "Assign due date")
+			table.add_row("", "")  # Separator
+
+			# Exit option
+			table.add_row("", "[bold underline]Exit:[/bold underline]")
+			table.add_row("", "|_>")
+
+
+			console.print(Panel(table, title="Project Management Options", expand=False))
+			
+			choice = console.input("[yellow]Enter your choice: ").upper()
+
+			if choice == 'R':
+				console.clear()
+				display_tasks(f"task project:{item_name} +PENDING export")
+			elif choice == 'DT':
+				dependency_tree(item_name)
+			elif choice == 'SD':
+				dependency_input = ""
+				manual_sort_dependencies(dependency_input)
+				dependency_tree(item_name)
+			elif choice == 'RD':
+				task_ids_input = console.input("Enter the IDs of the tasks to remove dependencies (comma-separated):\n")
+				remove_task_dependencies(task_ids_input)
+				dependency_tree(item_name)
+			elif choice == 'SP':
+				call_and_process_task_projects()
+			elif choice == 'MP':
+				multiple_projects_view()
+			elif choice == 'MA':
+				main_menu()
+			elif choice == 'UD':
+				update_metadata_field(item_name, 'description')
+			elif choice == 'UO':
+				update_metadata_field(item_name, 'standard_or_outcome')
+			elif choice == 'AA':
+				update_metadata_field(item_name, 'annotations')
+			elif choice == 'AW':
+				update_metadata_field(item_name, 'workLogs')
+			elif choice == 'SYDB':
+				sync_sultandb_with_taskwarrior(file_path)
+				display_tasks(f"task project:{item_name} +PENDING export")
+			elif choice == 'TW':
+				handle_task()
+				display_tasks(f"task project:{item_name} +PENDING export")
+			elif choice == 'TM':
+				task_ID = console.input("[cyan]Please enter the task ID: ")
+				if task_ID:
+					console.clear()
+					task_manager(task_ID)
+			elif choice == 'NT':
+				add_task_to_project(item_name)
+				display_tasks(f"task project:{item_name} +PENDING export")
+			elif choice == 'AN':
+				task_id = console.input("Enter the task ID to annotate: ")
+				annotation = console.input("Enter the annotation: ")
+				command = f"task {task_id} annotate {annotation}"
+				execute_task_command(command)
+				annotate_task(task_id, annotation)
+			elif choice == 'TD':
+				task_id = console.input("Enter the task ID to mark as completed: ")
+				command = f"task {task_id} done"
+				execute_task_command(command)
+			elif choice == 'DD':
+				task_id = console.input("Enter the task ID to assign a due date: ")
+				due_date = console.input("Enter the due date (YYYY-MM-DD): ")
+				command = f"task {task_id} modify due:{due_date}"
+				execute_task_command(command)
+			elif choice == '':
+				console.print("Exiting project management.")
+				break
 			else:
-				print("No project or AoR found with that name.")
+				console.print(Panel("Invalid choice. Please try again.", style="bold red"))
 
+
+
+# x_x
+
+
+	def load_project_metadata(file_path):
+		try:
+			with open(file_path, 'r') as f:
+				data = json.load(f)
+		except FileNotFoundError:
+			data = {}
+		# Combine 'aors' and 'projects'
+		aors = data.get('aors', [])
+		projects = data.get('projects', [])
+		
+		# Add 'AoR.' prefix to AoR names
+		for aor in aors:
+			aor['name'] = 'AoR.' + aor['name']
+		
+		items = aors + projects
+		# Create a dictionary mapping project names to metadata
+		project_metadata = {item['name']: item for item in items}
+		return project_metadata
+
+
+
+
+
+
+
+# x_x
+
+	def multiple_projects_view():
+		# Define your list of projects
+		project_list = ['CN',"Biz","ukNI"]
+
+		# Define the list of tags to exclude
+		excluded_tags = ['bean','maybe','docs','domains','grooming']
+
+		# Call the function to display tasks from these projects, excluding specified tags
+		display_multiple_projects(project_list, excluded_tags)
+
+
+	def display_multiple_projects(project_list, excluded_tags=None):
+		if excluded_tags is None:
+			excluded_tags = []
+		console = Console()
+		all_tasks = []
+
+		# Load project metadata
+		script_directory = os.path.dirname(os.path.abspath(__file__))
+		file_path = os.path.join(script_directory, "sultandb.json")
+		project_metadata = load_project_metadata(file_path)
+
+		# Fetch tasks for each project
+		for project in project_list:
+			# Build the command for each project, including excluded tags
+			command = ['task', f'project:"{project}"', '+PENDING']
+
+			# Add excluded tags to the command
+			for tag in excluded_tags:
+				command.append(f'-{tag}')  # Use -{tag} as per your practice
+
+			command.append('export')
+
+			# Debug: Print the command being executed
+			# print(f"Executing command: {' '.join(command)}")
+
+			result = subprocess.run(command, capture_output=True, text=True)
+			if result.stdout:
+				try:
+					tasks = json.loads(result.stdout)
+					if not tasks:
+						console.print(f"No tasks found for project {project}.", style="bold yellow")
+					else:
+						all_tasks.extend(tasks)
+				except json.JSONDecodeError as e:
+					console.print(f"Error decoding JSON for project {project}: {e}", style="bold red")
+			else:
+				console.print(f"No tasks found for project {project}.", style="bold yellow")
+
+		if not all_tasks:
+			console.print("No tasks found for the provided projects.", style="bold red")
+			return
+
+		# Now process the combined list of tasks
+		project_tag_map = defaultdict(lambda: defaultdict(list))
+		now = datetime.now(timezone.utc).astimezone()
+
+		for task in all_tasks:
+			project = task.get('project', 'No Project')
+			tags = task.get('tags', ['No Tag'])
+
+			description = task['description']
+			task_id = str(task['id'])
+
+			due_date_str = task.get('due')
+			due_date = parse_datetime(due_date_str) if due_date_str else None
+
+			annotations = task.get('annotations', [])
+			duration = task.get('duration', '')
+			original_priority = task.get('priority')
+			value = task.get('value')
+
+			# Convert value to float if possible
+			try:
+				value = float(value) if value is not None else None
+			except ValueError:
+				value = None
+
+			# Determine the priority level
+			if original_priority:
+				priority_level = original_priority.upper()
+			elif value is not None:
+				if value >= 2500:
+					priority_level = 'H'
+				elif value >= 700:
+					priority_level = 'M'
+				else:
+					priority_level = 'L'
+			else:
+				priority_level = None
+
+			# Assign colors based on priority level
+			if priority_level == 'H':
+				priority_color = 'bold red'
+			elif priority_level == 'M':
+				priority_color = 'bold yellow'
+			elif priority_level == 'L':
+				priority_color = 'bold green'
+			else:
+				priority_color = 'bold magenta'
+
+			# Initialize color to a default value
+			color = "default_color"
+			delta_text = ""
+			if due_date:
+				delta = due_date - now
+				if delta.total_seconds() < 0:
+					color = "red"
+				elif delta.days >= 365:
+					color = "steel_blue"
+				elif delta.days >= 90:
+					color = "light_slate_blue"
+				elif delta.days >= 30:
+					color = "green_yellow"
+				elif delta.days >= 7:
+					color = "thistle3"
+				elif delta.days >= 3:
+					color = "yellow1"
+				elif delta.days == 0:
+					color = "bold turquoise2"
+				else:
+					color = "bold orange1"
+				delta_text = format_timedelta(delta)
+
+			for tag in tags:
+				project_tag_map[project][tag].append(
+					(task_id, description, due_date, annotations, delta_text, color,
+					duration, priority_level, priority_color, value)
+				)
+
+		# Define lists of colors for levels and guide styles
+		# level_colors = ['bright_red', 'bright_green', 'bright_yellow', 'bright_blue',
+		# 				'bright_magenta', 'bright_cyan', 'bright_white']
+		# guide_styles = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
+
+		# Build the tree with different colors and guide styles for each level
+		tree = Tree("Task Overview", style="green", guide_style="green")
+		for project, tags in project_tag_map.items():
+			if project == 'No Project' and not any(tags.values()):
+				continue
+			project_levels = project.split(".")
+			current_branch = tree
+			for i, level in enumerate(project_levels):
+				# Adding or finding the branch for each project level
+				found_branch = None
+				for child in current_branch.children:
+					if child.label.plain == level:
+						found_branch = child
+						break
+				if not found_branch:
+					color = level_colors[i % len(level_colors)]  # Assign color based on level depth
+					guide_style = guide_styles[i % len(guide_styles)]  # Assign guide style based on level depth
+					found_branch = current_branch.add(Text(level, style=color), guide_style=guide_style)
+				current_branch = found_branch
+
+			# Get the metadata for the project or its parent
+			metadata = None
+			project_hierarchy = project.split('.')
+			for j in range(len(project_hierarchy), 0, -1):
+				partial_project = '.'.join(project_hierarchy[:j])
+				metadata = project_metadata.get(partial_project)
+				if metadata and any(metadata.values()):
+					break
+				else:
+					metadata = None
+
+			if metadata:
+				add_project_metadata_to_tree(metadata, current_branch)
+
+			for tag, tasks in tags.items():
+				if not tasks:
+					continue
+				tag_branch = current_branch.add(Text(tag, style="blue"), guide_style="blue")
+				for task_info in sorted(tasks, key=lambda x: (x[2] is None, x[2])):
+					task_id, description, due_date, annotations, delta_text, delta_color, duration, priority_level, priority_color, value = task_info
+					# Build task line as before
+					# Square brackets in red
+					left_bracket = Text("[", style="red")
+					right_bracket = Text("] ", style="red")
+					# Task ID in turquoise
+					task_id_text = Text(task_id, style="turquoise2")
+					# Priority in color based on priority level
+					if priority_level:
+						priority_text = Text(f"[{priority_level}] ", style=priority_color)
+					else:
+						priority_text = Text("")
+					# Value in bold cyan
+					if value is not None:
+						value_text = Text(f"[{value}] ", style="bold cyan")
+					else:
+						value_text = Text("")
+					# Duration in cyan
+					duration_text = Text(f"({duration}) " if duration else "", style="cyan")
+					# Description in white
+					description_text = Text(description + " ", style="white")
+					# Due date in the color determined earlier
+					if due_date:
+						due_date_text = Text(due_date.strftime("%Y-%m-%d"), style=delta_color)
+					else:
+						due_date_text = Text("")
+					# Delta text in the same color
+					delta_text_output = Text(f" ({delta_text})" if delta_text else "", style=delta_color)
+					# Combine texts for one line
+					task_line = (
+						left_bracket + task_id_text + right_bracket + priority_text + value_text +
+						duration_text + description_text + due_date_text + delta_text_output
+					)
+					task_branch = tag_branch.add(task_line, guide_style="dim")
+					if annotations:
+						annotation_branch = task_branch.add(Text("Annotations:", style="italic white"), guide_style="dim")
+						for annotation in annotations:
+							entry_datetime = datetime.strptime(annotation['entry'], "%Y%m%dT%H%M%SZ").strftime('%Y-%m-%d %H:%M:%S')
+							annotation_text = Text(f"{entry_datetime} - {annotation['description']}", style="dim white")
+							annotation_branch.add(annotation_text, guide_style="dim")
+
+		console.print(tree)
+
+
+
+	def add_project_metadata_to_tree(metadata, parent_branch):
+		# Determine if the project is an AoR project
+		project_name = metadata.get('name', '')
+		is_aor = project_name.startswith('AoR.')
+
+		content_present = False  # Flag to check if any metadata content is present
+		metadata_branch = None   # Initialize metadata_branch as None
+
+		# Description
+		description = metadata.get('description', '')
+		if description:
+			if not metadata_branch:
+				metadata_branch = parent_branch.add(Text("Metadata", style="bold light_steel_blue1"), guide_style="dim")
+			label_text = Text("Description: ", style="bold cyan")
+			value_text = Text(description, style="white")
+			metadata_branch.add(label_text + value_text, guide_style="dim")
+			content_present = True
+
+		# Display 'Standard' for AoR projects, 'Outcome' for normal projects
+		if is_aor:
+			standard = metadata.get('standard', '')
+			if standard:
+				if not metadata_branch:
+					metadata_branch = parent_branch.add(Text("Metadata", style="bold light_steel_blue1"), guide_style="dim")
+				label_text = Text("Standard: ", style="bold cyan")
+				value_text = Text(standard, style="white")
+				metadata_branch.add(label_text + value_text, guide_style="dim")
+				content_present = True
+		else:
+			outcome = metadata.get('outcome', '')
+			if outcome:
+				if not metadata_branch:
+					metadata_branch = parent_branch.add(Text("Metadata", style="bold light_steel_blue1"), guide_style="dim")
+				label_text = Text("Outcome: ", style="bold cyan")
+				value_text = Text(outcome, style="white")
+				metadata_branch.add(label_text + value_text, guide_style="dim")
+				content_present = True
+
+		# Annotations
+		annotations = metadata.get('annotations', [])
+		if annotations:
+			if not metadata_branch:
+				metadata_branch = parent_branch.add(Text("Metadata", style="bold light_steel_blue1"), guide_style="dim")
+			annotations_branch = metadata_branch.add(Text("Annotations", style="bold yellow"), guide_style="dim")
+			for annotation in annotations:
+				timestamp_str = annotation.get('timestamp', '')
+				content = annotation.get('content', '')
+				label_text = Text(f"{timestamp_str} - ", style="dim green")
+				value_text = Text(content, style="white")
+				annotations_branch.add(label_text + value_text, guide_style="dim")
+			content_present = True
+
+		# Work Logs
+		work_logs = metadata.get('workLogs', [])
+		if work_logs:
+			if not metadata_branch:
+				metadata_branch = parent_branch.add(Text("Metadata", style="bold light_steel_blue1"), guide_style="dim")
+			work_logs_branch = metadata_branch.add(Text("Work Logs", style="bold yellow"), guide_style="dim")
+			for work_log in work_logs:
+				timestamp_str = work_log.get('timestamp', '')
+				content = work_log.get('content', '')
+				label_text = Text(f"{timestamp_str} - ", style="dim green")
+				value_text = Text(content, style="white")
+				work_logs_branch.add(label_text + value_text, guide_style="dim")
+			content_present = True
+
+		# # Creation Date
+		# creation_date_str = metadata.get('creation_date', '')
+		# if creation_date_str:
+		# 	if not metadata_branch:
+		# 		metadata_branch = parent_branch.add(Text("Metadata", style="bold light_steel_blue1"), guide_style="dim")
+		# 	label_text = Text("Creation Date: ", style="bold cyan")
+		# 	value_text = Text(creation_date_str, style="white")
+		# 	metadata_branch.add(label_text + value_text, guide_style="dim")
+		# 	content_present = True
+
+		# # Last Modified Date
+		# last_modified_date_str = metadata.get('last_modified_date', '')
+		# if last_modified_date_str:
+		# 	if not metadata_branch:
+		# 		metadata_branch = parent_branch.add(Text("Metadata", style="bold light_steel_blue1"), guide_style="dim")
+		# 	label_text = Text("Last Modified Date: ", style="bold cyan")
+		# 	value_text = Text(last_modified_date_str, style="white")
+		# 	metadata_branch.add(label_text + value_text, guide_style="dim")
+		# 	content_present = True
+
+		# If no content was added, remove the Metadata branch if it exists
+		if not content_present and metadata_branch:
+			parent_branch.children.remove(metadata_branch)
+
+
+
+
+
+# x_x
+
+	def add_task_to_project(project_name):
+		task_descriptions = questionary.text("Enter the descriptions for the new tasks (one per line):", multiline=True).ask()
+		task_descriptions_list = task_descriptions.split('\n')
+		
+		tasks = []
+
+		for task_description in task_descriptions_list:
+			if not task_description.strip():
+				continue
+
+			create_command = f"task add proj:{project_name} {task_description}"
+			execute_task_command(create_command)
+			
+			task_id = get_latest_task_id()
+			tasks.append((task_id, task_description))
+		
+		print("\nAdded Tasks:")
+		for task_id, task_description in tasks:
+			print(f"Task ID: {task_id}, Description: {task_description}")
+
+		sort_dependencies = questionary.confirm("Do you want to sort the dependencies for the tasks?").ask()
+		if sort_dependencies:
+			action = questionary.select(
+			"Individual processing or bulk?",
+			choices=[
+				"1. Individual",
+				"2. Bulk assignment"
+			]).ask()
+
+			if action.startswith("1"):
+				for task_id, task_description in tasks:
+					has_dependencies = questionary.confirm(f"Does the task '{task_description}' have dependencies?").ask()
+
+					if has_dependencies:
+						dependency_type = questionary.select(
+							"Is this a blocking task (secondary) or does it have dependent tasks (primary)?",
+							choices=["Secondary task", "Primary task"]
+						).ask()
+
+						if dependency_type == "Secondary task":
+							blocking_task_id = questionary.text("Enter the ID of the task this is a sub-task of:").ask()
+							modify_command = f"task {blocking_task_id} modify depends:{task_id}"
+							execute_task_command(modify_command)
+							print(f"Task {task_id} is now a sub-task of {blocking_task_id}.")
+						elif dependency_type == "Primary task":
+							dependent_task_ids = questionary.text("Enter the IDs of the tasks that depend on this (comma-separated):").ask()
+							modify_dependent_tasks(task_id, dependent_task_ids)
+			elif action.startswith("2"):
+				manual_sort_dependencies("")
+			
+
+	def get_latest_task_id():
+		export_command = "task +LATEST export"
+		try:
+			proc = subprocess.run(export_command, shell=True, text=True, capture_output=True)
+			if proc.stdout:
+				tasks = json.loads(proc.stdout)
+				if tasks:
+					return str(tasks[0]['id'])
+			if proc.stderr:
+				print(proc.stderr)
+		except Exception as e:
+			print(f"An error occurred while exporting the latest task: {e}")
+		return None
+
+	def execute_task_command(command):
+		try:
+			proc = subprocess.run(command, shell=True, text=True, capture_output=True)
+			if proc.stdout:
+				print(proc.stdout)
+			if proc.stderr:
+				print(proc.stderr)
+		except Exception as e:
+			print(f"An error occurred while executing the task command: {e}")
+
+	# def modify_dependent_tasks(dependent_ids, task_id):
+	# 	ids = dependent_ids.split(',')
+	# 	for id in ids:
+	# 		modify_command = f"task {id.strip()} modify depends:{task_id}"
+	# 		execute_task_command(modify_command)
+	# 		print(f"Task {task_id} now depends on task {id.strip()}.")
+
+	def manual_sort_dependencies(sub_task_ids):
+		console.print("\n[bold cyan]Manual Sorting of Dependencies:[/bold cyan]")
+		for sub_task_id in sub_task_ids:
+			console.print(f"- Sub-task ID: {sub_task_id}")
+		
+		console.print("\nEnter the dependencies in the format 'task_id>subtask1=subtask2=subtask3>further_subtask'.")
+		console.print("Use '>' for sequential dependencies and '=' for parallel subtasks.")
+		console.print("You can enter multiple chains separated by commas.")
+		console.print("Type 'done' when finished.\n")
+
+		while True:
+			dependency_input = Prompt.ask("> ").strip()
+			if dependency_input.lower() == 'done':
+				break
+			
+			# Split the input into individual chains
+			chains = dependency_input.split(',')
+			
+			with console.status("[bold green]Setting dependencies...", spinner="dots") as status:
+				for chain in chains:
+					if '>' in chain or '=' in chain:
+						# Split the chain into levels
+						levels = chain.split('>')
+						
+						for i in range(len(levels) - 1):
+							parent_tasks = levels[i].split('=')
+							child_tasks = levels[i+1].split('=')
+							
+							# The last task in parent_tasks depends on all child_tasks
+							parent_task = parent_tasks[-1].strip()
+							for child_task in child_tasks:
+								modify_command = f"task {parent_task} modify depends:{child_task.strip()}"
+								execute_task_command(modify_command)
+								console.print(f"Task {parent_task} now depends on task {child_task.strip()}.")
+					else:
+						console.print(f"[bold yellow]Warning:[/bold yellow] Skipping invalid chain: {chain}")
+
+		console.print("[bold green]Dependency setting completed.[/bold green]")
+
+	def remove_task_dependencies(task_ids_input):
+		console.print("\n[bold cyan]Removing Task Dependencies[/bold cyan]")
+		
+		# Split the input by commas
+		id_groups = task_ids_input.split(',')
+		
+		all_ids = []
+		
+		# Process each group (single ID or range)
+		for group in id_groups:
+			group = group.strip()
+			if '-' in group:
+				# This is a range
+				start, end = map(int, group.split('-'))
+				all_ids.extend(range(start, end + 1))
+			else:
+				# This is a single ID
+				all_ids.append(int(group))
+		
+		with console.status("[bold green]Removing dependencies...", spinner="dots") as status:
+			for id in all_ids:
+				modify_command = f"task {id} modify depends:"
+				execute_task_command(modify_command)
+				console.print(f"Dependencies removed from task {id}.")
+		
+		console.print("[bold green]Dependency removal completed.[/bold green]")
 
 	def interactive_prompt(file_path):
 		# Load from SultanDB
-		aors, projects = load_sultandb(file_path)
+		#aors, projects = load_sultandb(file_path)
 
 		# Sync with TaskWarrior to update projects and AoRs
 		active_aors, inactive_aors, active_projects, inactive_projects = sync_with_taskwarrior(
 			aors, projects,file_path)
 
 		commands = {
-			'ua': ('Update AoRs', ''),
-			'up': ('Update Projects', ''),
-			'e': ('Exit', ''),
-			's': ('Search', ''),
-			'c': ('Clear Data', ''),
-			'b': ('Basic summary', ''),
-			'd': ('Detailed summary', ''),
-			'i': ('Inbox', ''),
-			'tl': ('Task list', ''),
-			'ht': ('Handle Task', ''),
-			'td': ('Daily tasks',''),
+			'ua': ('Update AoRs', ''),
+			'up': ('Update Projects', ''),
+			'e': ('Exit', ''),
+			's': ('Search', ''),
+			'c': ('Clear Data', ''),
+			'b': ('Basic summary', ''),
+			'd': ('Detailed summary', ''),
+			'tc': ('Task centre', ''),
+			'ht': ('Handle Task', ''),
 			'o' : ('Overdue tasks list',''),
-			'rr': ('Recurrent tasks report',''),
-			'z': ('Process or Value assignment','')
+			'td': ('Daily tasks', ''),
+			'rr': ('Recurrent tasks report', ''),
+			'z': ('Process or Value assignment', '')
 		}
 
 		custom_style = Style([
@@ -1191,7 +2063,7 @@ try:
 						view_data(selected_project, project_tags)
 			elif command == 'Search':
 				search_commands = ['Search Data',
-								   'Deep dive projects', 'Search Task', 'Back']
+								   'Search Project', 'Search Task', 'Back']
 				search_command = questionary.select(
 					"Please select a search command",
 					choices=search_commands,
@@ -1199,8 +2071,8 @@ try:
 				).ask()
 				if search_command == 'Search Data':
 					search_data(aors, projects)
-				elif command == 'Deep dive projects':
-					search_project()
+				elif command == 'Search Project':
+					call_and_process_task_projects()
 				elif search_command == 'Search Task':
 					search_task()
 			elif command == 'View Data':
@@ -1253,6 +2125,8 @@ try:
 				recurrent_report()
 			elif command == 'Process or Value assignment':
 				eisenhower()
+			elif command == 'Task centre':
+				task_control_center()
 
 
 
@@ -1460,7 +2334,7 @@ try:
 		return answers['confirmation']
 
 	def get_tags_for_aor(aor_name):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()['pending']
 		aor_tasks = [task for task in tasks if 'tags' in task and task.get(
 			'project') == f"AoR.{aor_name}"]
@@ -1476,21 +2350,11 @@ try:
 
 		return tag_counts
 
-	def load_sultandb(file_path):
-		try:
-			with open(file_path, 'r', encoding='utf-8') as file:
-				sultandb = json.load(file)
-		except FileNotFoundError:
-			sultandb = {"aors": [], "projects": []}
-		return sultandb['aors'], sultandb['projects']
 
-	def save_sultandb(file_path, aors, projects):
-		sultandb = {"aors": aors, "projects": projects}
-		with open(file_path, 'w', encoding='utf-8') as file:
-			json.dump(sultandb, file, default=str, indent=4)
+
 
 	def sync_with_taskwarrior(aors, projects,file_path):
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		task_projects = set()
@@ -1549,10 +2413,80 @@ try:
 		from rich.tree import Tree
 		from rich.text import Text
 		from rich.console import Console
-
+		from collections import defaultdict
 
 		console = Console()
-		warrior = TaskWarrior()
+		tasks = warrior.load_tasks()
+		project_data = defaultdict(lambda: defaultdict(list))
+		project_task_count = defaultdict(int)
+		now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+
+		for task in tasks['pending']:
+			project = task.get('project', None)
+			tags = task.get('tags', [])
+			description = task.get('description', '')
+			task_id = task.get('id', '')
+			due_date_str = task.get('due')
+			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
+
+			if project:
+				# Count tasks for each level of the project hierarchy
+				project_levels = project.split('.')
+				for i in range(1, len(project_levels) + 1):
+					project_task_count['.'.join(project_levels[:i])] += 1
+
+				if tags:
+					for tag in tags:
+						time_remaining = due_date - now if due_date else None
+						time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+				else:
+					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+			else:
+				project_task_count["No Project"] += 1
+				if tags:
+					for tag in tags:
+						project_data["No Project"][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+				else:
+					project_data["No Project"]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+
+		tree = Tree("Tasks Summary")
+
+		for project, tag_data in sorted(project_data.items()):
+			if project != "No Project":
+				project_levels = project.split(".")
+				project_branch = tree
+				for i, level in enumerate(project_levels):
+					color = colors[i % len(colors)]
+					current_project = '.'.join(project_levels[:i+1])
+					level_text = Text(f"{level} [{project_task_count[current_project]}]", style=f'{color} bold')
+					
+					if level_text not in [child.label for child in project_branch.children]:
+						project_branch = project_branch.add(level_text)
+					else:
+						project_branch = next(child for child in project_branch.children if child.label == level_text)
+
+				for tag, tasks_data in sorted(tag_data.items()):
+					tag_color = 'green' if not project.startswith("AoR.") else 'cyan'
+					tag_branch = project_branch.add(Text(f"{tag} [{len(tasks_data)}]", style=f'{tag_color} bold'))
+
+		# Handle "No Project" separately to make sure it comes at the end
+		if "No Project" in project_data:
+			project_branch = tree.add(Text(f"No Project [{project_task_count['No Project']}]", style='red bold'))
+			for tag, tasks_data in sorted(project_data["No Project"].items()):
+				tag_color = 'blue'
+				tag_branch = project_branch.add(Text(f"{tag} [{len(tasks_data)}]", style=f'{tag_color} bold'))
+
+		console.print(tree)
+
+	def next_summary():
+		#the modules are imported here because of an unidentified cause: the ascii codes are getting printed in the other functions instead of coloring the output when these modules are imported in the main.
+		from rich import print
+		from rich.tree import Tree
+		from rich.text import Text
+		from rich.console import Console
+		console = Console()
+		
 		tasks = warrior.load_tasks()
 
 		project_data = defaultdict(lambda: defaultdict(list))
@@ -1566,52 +2500,58 @@ try:
 			due_date_str = task.get('due')
 			due_date = parse(due_date_str) if due_date_str and due_date_str != '' else None
 
-			if project:
-				if tags:
-					for tag in tags:
-						time_remaining = due_date - now if due_date else None
-						time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
-						project_data[project][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+			# Only process tasks with the "next" tag
+			if 'next' in tags:
+				if project:
+					time_remaining = due_date - now if due_date else None
+					time_remaining_str = str(time_remaining)[:-7] if time_remaining else ''
+					project_data[project]["next"] = [f"{task_id} {description}", due_date_str, time_remaining_str]
 				else:
-					project_data[project]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
-			else:
-				# For tasks without a project, we will put them under "No Project" key
-				if tags:
-					for tag in tags:
-						project_data["No Project"][tag].append([f"{task_id} {description}", due_date_str, time_remaining_str])
-				else:
-					# For tasks without a project and without tags, we put them under "No Tag" key
-					project_data["No Project"]["No Tag"].append([f"{task_id} {description}", due_date_str, time_remaining_str])
+					# For tasks without a project, we will put them under "No Project" key
+					project_data["No Project"]["next"].append(f"{task_id} {description}")
 
-		tree = Tree("Tasks Summary")
+		tree = Tree(Text("Saikou", style='green bold'))
 
 		for project, tag_data in sorted(project_data.items()):
 			if project != "No Project":
 				project_levels = project.split(".")
 				project_branch = tree
-				for i, level in enumerate(project_levels):
-					color = colors[i % len(colors)]
-					level = Text(level, style=f'{color} bold')
-					if level not in [child.label for child in project_branch.children]:
-						project_branch = project_branch.add(level)
-					else:
-						project_branch = next(child for child in project_branch.children if child.label == level)
 
-				for tag, tasks_data in sorted(tag_data.items()):
-					tag_color = 'green' if not project.startswith("AoR.") else 'cyan'
-					tag_branch = project_branch.add(Text(f"{tag} [{len(tasks_data)}]", style=f'{tag_color} bold'))
+				for level_idx, level in enumerate(project_levels):
+					if level not in [child.label.plain for child in project_branch.children]:
+						project_branch = project_branch.add(Text(level, style=f'{colors[level_idx % len(colors)]} bold'))
+					else:
+						project_branch = next(child for child in project_branch.children if child.label.plain == level)
+
+				if "next" in tag_data:
+					tag_color = 'blue' if not project.startswith("AoR.") else 'yellow'
+					tag_branch = project_branch.add(Text("next", style=f'{tag_color} bold'))
+
+					task_data = tag_data["next"][0]
+					if task_data:
+						task_id, description = (task_data.split(" ", 1) + [""])[:2]
+						due_date = tag_data["next"][1] if len(tag_data["next"]) > 1 else None
+						try:
+							due_date_formatted = datetime.strptime(due_date, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d") if due_date else ""
+						except ValueError:
+							due_date_formatted = ""
+
+						time_remaining = tag_data["next"][2] if len(tag_data["next"]) > 2 else None
+
+						tag_branch.add(f"[red bold]{task_id}[/red bold] [white bold]{description}[/white bold] [blue bold]{due_date_formatted}[/blue bold] [green bold]{time_remaining}[/green bold]")
 
 		# Handle "No Project" separately to make sure it comes at the end
 		if "No Project" in project_data:
 			project_branch = tree.add(Text("No Project", style='red bold'))
-			for tag, tasks_data in sorted(project_data["No Project"].items()):
+			if "next" in project_data["No Project"]:
 				tag_color = 'blue'
-				tag_branch = project_branch.add(Text(f"{tag} [{len(tasks_data)} tasks]", style=f'{tag_color} bold'))
+				tag_branch = project_branch.add(Text("next", style=f'{tag_color} bold'))
+
+				for task_data in project_data["No Project"]["next"]:
+					task_id, description = (task_data.split(" ", 1) + [""])[:2]
+					tag_branch.add(f"[red bold]{task_id}[/red bold] [white]{description}[/white]")
 
 		console.print(tree)
-
-
-	
 	
 	def detailed_summary():
 		#the modules are imported here because of an unidentified cause: the ascii codes are getting printed in the other functions instead of coloring the output when these modules are imported in the main.
@@ -1620,7 +2560,7 @@ try:
 		from rich.text import Text
 		from rich.console import Console
 		console = Console()
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		project_data = defaultdict(lambda: defaultdict(list))
@@ -1717,7 +2657,7 @@ try:
 		from rich.text import Text
 		from rich.console import Console
 		console = Console()
-		warrior = TaskWarrior()
+		
 		tasks = warrior.load_tasks()
 
 		project_data = defaultdict(lambda: defaultdict(list))
@@ -1865,7 +2805,7 @@ try:
 			return deleted_tasks
 		quote = "We are what we repeatedly do. Excellence, then, is not an act, but a habit."
 		print(quote)
-		warrior = TaskWarrior()
+		
 		all_tasks = warrior.load_tasks()
 
 		completed_tasks = all_tasks['completed']
@@ -1953,16 +2893,222 @@ try:
 # ==================
 
 
+
+
+
+	def run_taskwarrior_command(command):
+		try:
+			result = subprocess.check_output(command, shell=True, text=True)
+			return result
+		except subprocess.CalledProcessError as e:
+			print(f"An error occurred: {e}")
+			return None
+
+
+	def get_tasks(filter_query):
+		command = f"task {filter_query} +PENDING export"
+		output = run_taskwarrior_command(command)
+		if output:
+			# Parse the JSON output into Python objects
+			tasks = json.loads(output)
+			return tasks
+		else:
+			return []
+
+
+	def ask_question(question):
+		while True:
+			response = input(question + Fore.WHITE + " (0-5, 'skip', 'done', 'del'): \n:=> ").strip().lower()
+			if response in ['skip', 'done', 'del']:
+				return response
+			try:
+				response = int(response)
+				if 0 <= response <= 5:
+					return response
+				else:
+					print(Fore.RED + "Please enter a number between 0 and 5.")
+			except ValueError:
+				print("x_x")
+				print(Fore.RED + "Invalid input. Please enter a number between 0 and 5, 'skip', 'done', or 'del'.")
+
+	def ask_questions():
+		print(Fore.RED + "\nAssessing Importance:")
+		imp_questions = [
+			# Existing importance questions
+			Fore.BLUE + "Impact on Objectives: How will completing this task impact your short-term and long-term objectives or goals?\n0 - No impact.\n1 - Negligible/Uncertain\n2 - Small impact.\n3 - Medium impact.\n4 - High impact.\n5 - Critical\n",
+			Fore.GREEN + "Consequences of Neglect: What are the consequences if this task is not completed?\n0 - No consequences.\n1 - Minor inconvenience.\n2 - Moderate inconvenience.\n3 - Significant inconvenience.\n4 - Major issue.\n5 - Catastrophic consequences.\n",
+			Fore.CYAN + "Value Addition: How much value does completing this task add to your project or overall work?\n0 - No value.\n1 - Little value.\n2 - Some value.\n3 - Considerable value.\n4 - High value.\n5 - Exceptional value.\n",
+			Fore.WHITE + "Stakeholder Expectations: Are there any stakeholders (like a boss, client, or team) who consider this task critical?\n0 - No stakeholders.\n1 - Low importance to stakeholders.\n2 - Some importance to stakeholders.\n3 - Important to some stakeholders.\n4 - Important to many stakeholders.\n5 - Critical to key stakeholders.\n",
+			Fore.YELLOW + "Development Opportunities: Does this task offer any opportunities for personal or professional growth?\n0 - No growth opportunities.\n1 - Very little growth.\n2 - Some growth.\n3 - Moderate growth.\n4 - Significant growth.\n5 - Exceptional growth.\n",
+			Fore.MAGENTA + "Regret Minimization: In 20 years, will you regret not doing this?\n0 - No regret.\n1 - Very little regret.\n2 - Some regret.\n3 - Moderate regret.\n4 - Significant regret.\n5 - Extreme regret.\n",
+			# Additional importance questions
+			Fore.YELLOW + "Alignment with Personal Values: How well does this task align with your personal or organizational values?\n0 - No alignment.\n1 - Very low alignment.\n2 - Low alignment.\n3 - Moderate alignment.\n4 - High alignment.\n5 - Complete alignment.\n",
+			Fore.CYAN + "Long-Term Benefits: Does completing this task contribute to long-term goals or benefits?\n0 - No contribution.\n1 - Minimal contribution.\n2 - Some contribution.\n3 - Moderate contribution.\n4 - Significant contribution.\n5 - Critical contribution.\n",
+			Fore.GREEN + "Unique Ability: Is this task something that you are uniquely qualified to do?\n0 - Anyone can do it.\n1 - Many people can do it.\n2 - Some people can do it.\n3 - Few people can do it.\n4 - Very few people can do it.\n5 - Only you can do it.\n",
+			Fore.BLUE + "Opportunity Cost: What other important tasks could you be doing instead of this one?\n0 - Missing out on critical tasks.\n1 - Missing out on important tasks.\n2 - Some important tasks.\n3 - Less important tasks.\n4 - Trivial tasks.\n5 - Not missing out on anything else.\n",
+			Fore.MAGENTA + "Financial Impact: What is the financial impact of completing this task?\n0 - No financial impact.\n1 - Minimal impact.\n2 - Some impact.\n3 - Moderate impact.\n4 - Significant impact.\n5 - Critical financial impact.\n",
+		]
+		# Rationale Behind the Weights
+
+		# Importance weights (adjusted for high performance)
+		importance_weights = [5, 3, 4, 3, 4, 5, 5, 5, 4, 3, 5]
+
+		# Importance Questions
+		# Impact on Objectives (Weight: 5):
+
+		# Core to achieving goals; high weight ensures tasks contributing directly to objectives are prioritized.
+		# Consequences of Neglect (Weight: 3):
+
+		# Important but less so than proactive impact; moderate weight.
+		# Value Addition (Weight: 4):
+
+		# High performers seek tasks that add significant value; high weight.
+		# Stakeholder Expectations (Weight: 3):
+
+		# Important for maintaining relationships; moderate weight.
+		# Development Opportunities (Weight: 4):
+
+		# Personal growth is crucial; high weight.
+
+		# Regret Minimization (Weight: 5):
+		# Regret is painful and nothing can be done to change what has not been done, high weight.
+
+		# Alignment with Personal Values (Weight: 5):
+
+		# Ensures tasks are meaningful; highest weight.
+		# Long-Term Benefits (Weight: 5):
+
+		# Focus on sustainability and future gains; highest weight.
+		# Unique Ability (Weight: 4):
+
+		# Leverage unique skills for maximum impact; high weight.
+		# Opportunity Cost (Weight: 3):
+
+		# Important to consider what else could be done; moderate weight.
+		# Financial Impact (Weight: 5):
+
+		# Direct influence on success metrics; highest weight.
+
+
+		importance_scores = []
+		for i, q in enumerate(imp_questions):
+			score = ask_question(q)
+			if score in ['skip', 'done', 'del']:
+				return score
+			weighted_score = score * importance_weights[i]
+			importance_scores.append(weighted_score)
+
+		print(Fore.RED + "\nAssessing Urgency:")
+		urg_questions = [
+			# Existing urgency questions
+			Fore.RED + "Deadlines: Is there a fixed deadline for this task, and how soon is it?\n0 - No deadline.\n1 - Far in the future.\n2 - Somewhat distant.\n3 - Approaching soon.\n4 - Imminent.\n5 - Immediate.\n",
+			Fore.CYAN + "Dependency: Are other tasks or people dependent on the completion of this task?\n0 - No dependency.\n1 - Very low dependency.\n2 - Low dependency.\n3 - Moderate dependency.\n4 - High dependency.\n5 - Critical dependency.\n",
+			Fore.BLUE + "Time Sensitivity: Will the task become more difficult or impossible if not done soon?\n0 - Not time-sensitive.\n1 - Very low sensitivity.\n2 - Low sensitivity.\n3 - Moderate sensitivity.\n4 - High sensitivity.\n5 - Extremely time-sensitive.\n",
+			Fore.WHITE + "Risk of Delay: What are the risks or costs associated with delaying this task?\n0 - No risks.\n1 - Very low risk.\n2 - Low risk.\n3 - Moderate risk.\n4 - High risk.\n5 - Extreme risk.\n",
+			Fore.YELLOW + "Immediate Benefit: Is there an immediate benefit or relief from completing this task quickly?\n0 - No immediate benefit.\n1 - Very little benefit.\n2 - Some benefit.\n3 - Considerable benefit.\n4 - High benefit.\n5 - Exceptional benefit.\n",
+			# Additional urgency questions
+			Fore.MAGENTA + "External Deadlines: Is there an externally imposed deadline (e.g., from a client or regulatory body)?\n0 - No external deadline.\n1 - Deadline far in the future.\n2 - Approaching but not urgent.\n3 - Deadline soon.\n4 - Deadline very soon.\n5 - Immediate deadline.\n",
+			Fore.GREEN + "Resource Availability: Are the resources needed for this task available now but may not be later?\n0 - Resources always available.\n1 - Resources unlikely to become unavailable.\n2 - May become unavailable in the distant future.\n3 - May become unavailable soon.\n4 - Likely to become unavailable soon.\n5 - Becoming unavailable immediately.\n",
+			Fore.CYAN + "Impact of Delay on Others: Will delaying this task negatively affect others?\n0 - No impact on others.\n1 - Minimal impact.\n2 - Some impact.\n3 - Moderate impact.\n4 - Significant impact.\n5 - Critical impact.\n",
+			Fore.BLUE + "Time-Sensitive Opportunities: Does this task involve a time-sensitive opportunity that will be lost if not acted upon quickly?\n0 - No time-sensitive opportunity.\n1 - Very low sensitivity.\n2 - Low sensitivity.\n3 - Moderate sensitivity.\n4 - High sensitivity.\n5 - Extremely time-sensitive.\n",
+		]
+
+		# Urgency weights (adjusted for high performance)
+		urgency_weights = [5, 4, 3, 4, 2, 5, 4, 4, 5]
+		# Urgency Questions
+		# Deadlines (Weight: 5):
+
+		# Meeting deadlines is critical; highest weight.
+		# Dependency (Weight: 4):
+
+		# Unblocking others is important; high weight.
+		# Time Sensitivity (Weight: 3):
+
+		# Important but less than deadlines; moderate weight.
+		# Risk of Delay (Weight: 4):
+
+		# Avoiding negative consequences; high weight.
+		# Immediate Benefit (Weight: 2):
+
+		# Less critical than long-term gains; lower weight.
+		# External Deadlines (Weight: 5):
+
+		# Non-negotiable deadlines; highest weight.
+		# Resource Availability (Weight: 4):
+
+		# Maximizing use of available resources; high weight.
+		# Impact of Delay on Others (Weight: 4):
+
+		# Maintaining team efficiency; high weight.
+		# Time-Sensitive Opportunities (Weight: 5):
+
+		# Capitalizing on fleeting opportunities; highest weight.
+
+
+		urgency_scores = []
+		for i, q in enumerate(urg_questions):
+			score = ask_question(q)
+			if score in ['skip', 'done', 'del']:
+				return score
+			weighted_score = score * urgency_weights[i]
+			urgency_scores.append(weighted_score)
+
+		# Effort Estimation
+		print(Fore.RED + "\nAssessing Effort:")
+		effort_question = Fore.YELLOW + "Effort Required: Estimate the effort required to complete this task (time, resources, complexity).\n0 - No effort.\n1 - Minimal effort.\n2 - Low effort.\n3 - Moderate effort.\n4 - High effort.\n5 - Extreme effort.\n"
+		effort = ask_question(effort_question)
+		if effort in ['skip', 'done', 'del']:
+			return effort
+		
+		# Effort weight (adjusted for high performance)
+		effort_weight = 0.5  # Lessens the impact of effort on the final value
+		adjusted_effort = (effort * effort_weight) + 1  # +1 to avoid division by zero
+
+
+		# Adjusting the scoring mechanism
+		max_importance_score = 5 * sum(importance_weights)
+		max_urgency_score = 5 * sum(urgency_weights)
+
+		total_importance = sum(importance_scores)
+		total_urgency = sum(urgency_scores)
+
+		# Normalizing the scores to a 0-100 scale
+		normalized_importance = (total_importance / max_importance_score) * 100
+		normalized_urgency = (total_urgency / max_urgency_score) * 100
+
+		# Calculating the task value incorporating effort
+		value = (normalized_importance * normalized_urgency) / adjusted_effort
+
+		return value
+
 	def eisenhower():
 		try:
-			filter_query = input(Fore.CYAN + "Enter your Taskwarrior filter:\n ")
+			# Define filter options
+			filter_options = {
+				'1': ('Overdue', '+OVERDUE +PENDING'),
+				'2': ('Due Today', 'due:today'),
+				'3': ('Due Tomorrow', 'due:tomorrow'),
+			}
 
-			fork = input ("Do you want to asses priority (pri) or process (pro) the tasks?\n" + Fore.RED)
+			print(Fore.CYAN + "You can enter your own Taskwarrior filter, or select a preset filter by entering its number:")
+			for key, (name, _) in filter_options.items():
+				print(f"{key}. {name}")
 
-			if fork == "pri":
+			filter_query = input(Fore.CYAN + "Enter your Taskwarrior filter or select a number: ")
+
+			if filter_query in filter_options:
+				filter_query = filter_options[filter_query][1]
+				print(Fore.GREEN + f"Using preset filter: {filter_query}")
+			else:
+				print(Fore.GREEN + f"Using custom filter: {filter_query}")
+
+			fork = input("Do you want to assess priority (i), process (o), or use the Eisenhower matrix (e) for the tasks?\n" + Fore.RED)
+
+			if fork == "i":
 				tasks = get_tasks(filter_query)
 
 				for task in tasks:
+					print(delimiter)
 					display_task_details(task['uuid'])
 					print(Fore.CYAN + f"\nProcessing task: {task['description']}")
 					response = ask_questions()
@@ -1977,112 +3123,94 @@ try:
 							print(Fore.GREEN + f"Deleted task {task['uuid']}")
 						continue
 
-					urgency, importance = response
-					value = urgency * importance
+					value = response
+					if value >= 2500:
+						priority = 'H'  # High Priority
+					elif value >= 700:
+						priority = 'M'  # Medium Priority
+					else:
+						priority = 'L'  # Low Priority
 
-					# Update task with the calculated value
-					update_command = f"task {task['uuid']} modify value:{value}"
+					# Update task with value and priority
+					update_command = f"task {task['uuid']} modify value:{value:.2f} priority:{priority}"
 					run_taskwarrior_command(update_command)
-					print(Fore.GREEN + f"Updated task with value: {value}")
-			elif fork == "pro":
+					print(Fore.GREEN + f"Updated task with value: {value:.2f} and priority: {priority}")
+
+			elif fork == "o":
 				tasks = get_inbox_tasks(filter_query)
 				for task in tasks:
 					process_task(task)
+			elif fork == "e":
+				tasks = get_tasks(filter_query)
+				for task in tasks:
+					print(delimiter)
+					display_task_details(task['uuid'])
+					print(Fore.CYAN + f"\nAssessing task using the Eisenhower matrix: {task['description']}")
+					matrix_section = ask_eisenhower_matrix()
+					if matrix_section in ['skip', 'done', 'del']:
+						if matrix_section == 'skip':
+							print(Fore.BLUE + "Skipping task.")
+						elif matrix_section == 'done':
+							run_taskwarrior_command(f"task {task['uuid']} done")
+							print(Fore.GREEN + "Marked task as done.")
+						elif matrix_section == 'del':
+							run_taskwarrior_command(f"task {task['uuid']} delete -y")
+							print(Fore.GREEN + f"Deleted task {task['uuid']}")
+						continue
+
+					# Assign attributes based on the Eisenhower matrix section
+					if matrix_section == 1:
+						update_command = f"task {task['uuid']} modify +IU-do-now priority:H"
+					elif matrix_section == 2:
+						update_command = f"task {task['uuid']} modify +INU-schedule priority:M"
+					elif matrix_section == 3:
+						update_command = f"task {task['uuid']} modify +UNI-delegate priority:L"
+					elif matrix_section == 4:
+						update_command = f"task {task['uuid']} modify +NINU-eliminate"
+					run_taskwarrior_command(update_command)
+					print(Fore.GREEN + "Updated task with Eisenhower matrix section attributes.")
+			else:
+				print(Fore.RED + "Invalid option selected. Exiting.")
+				return
 		except KeyboardInterrupt:
 			print(Fore.RED + "\nProcess interrupted. Exiting.")
 			return
 
 
-	def run_taskwarrior_command(command):
-		try:
-			result = subprocess.check_output(command, shell=True, text=True)
-			return result
-		except subprocess.CalledProcessError as e:
-			print(f"An error occurred: {e}")
-			return None
-
-	def get_tasks(filter_query):
-		command = f"task {filter_query} +PENDING -CHILD export"
-		output = run_taskwarrior_command(command)
-		if output:
-			# Parse the JSON output into Python objects
-			tasks = json.loads(output)
-			return tasks
-		else:
-			return []
-
-	def ask_question(question):
+	def ask_eisenhower_matrix():
 		while True:
-			response = input(question + Fore.WHITE + " (0-5, 'skip', 'done', 'del'): ").strip().lower()
+			response = input(Fore.YELLOW + "In which section of the Eisenhower matrix is this task?\n1 - Important and Urgent\n2 - Important and Not Urgent\n3 - Not Important and Urgent\n4 - Not Important and Not Urgent\n('skip', 'done', 'del'): \n:=> ").strip().lower()
 			if response in ['skip', 'done', 'del']:
 				return response
 			try:
 				response = int(response)
-				if 0 <= response <= 5:
+				if 1 <= response <= 4:
 					return response
 				else:
-					print(Fore.RED + "Please enter a number between 0 and 5.")
+					print(Fore.RED + "Please enter a number between 1 and 4.")
 			except ValueError:
-				print("x_x")
-				print(Fore.RED + "Invalid input. Please enter a number between 0 and 5, 'skip', 'done', or 'del'.")
-				
-				
+				print(Fore.RED + "Invalid input. Please enter a number between 1 and 4, 'skip', 'done', or 'del'.")
 
-
-	def ask_questions():
-		print(Fore.RED + "\nAssessing Importance:")
-		imp_questions = [
-		Fore.BLUE + "Impact on Objectives: How will completing this task impact my short-term and long-term objectives or goals?",
-		Fore.GREEN +  "Consequences of Neglect: What are the consequences if this task is not completed?",
-		Fore.CYAN +  "Value Addition: How much value does completing this task add to my project or overall work?",
-		Fore.WHITE +  "Stakeholder Expectations: Are there any stakeholders (like a boss, client, or team) who consider this task critical?",
-		Fore.YELLOW +  "Development Opportunities: Does this task offer any opportunities for personal or professional growth?",
-		Fore.MAGENTA + "Regret Minimization: In 20 years, will I regret not doing this?"
-		]
-
-		importance_scores = []
-		for q in imp_questions:
-			score = ask_question(q)
-			if score in ['skip', 'done', 'del']:
-				return score
-			importance_scores.append(score)
-
-		print(Fore.RED + "\nAssessing Urgency:")
-		urg_questions = [
-		Fore.RED + "Deadlines: Is there a fixed deadline for this task, and how soon is it?",
-		Fore.CYAN + "Dependency: Are other tasks or people dependent on the completion of this task?","Time Sensitivity: Will the task become more difficult or impossible if not done soon?",
-		Fore.WHITE + "Risk of Delay: What are the risks or costs associated with delaying this task?",
-		Fore.YELLOW + "Immediate Benefit: Is there an immediate benefit or relief from completing this task quickly?"
-		]
-
-		urgency_scores = []
-		for q in urg_questions:
-			score = ask_question(q)
-			if score in ['skip', 'done', 'del']:
-				return score
-			urgency_scores.append(score)
-
-		total_importance = sum(importance_scores)
-		total_urgency = sum(urgency_scores)
-
-		return total_urgency, total_importance
 		
-	def display_task_details(task_uuid):
-		command = f"task {task_uuid} export"
-		output = run_taskwarrior_command(command)
-		if output:
-			task_details = json.loads(output)
-			if task_details:
-				task = task_details[0]  # Assuming the first item is the task we want
-				for key, value in task.items():
-					print(f"{key}: {value}")
-			else:
-				print(Fore.RED + "No task details found.")
-		else:
-			print(Fore.RED + "Failed to retrieve task details.")
+	# def display_task_details(task_uuid):
+	# 	command = f"task {task_uuid} export"
+	# 	output = run_taskwarrior_command(command)
+	# 	if output:
+	# 		task_details = json.loads(output)
+	# 		if task_details:
+	# 			task = task_details[0]  # Assuming the first item is the task we want
+	# 			for key, value in task.items():
+	# 				print(f"{key}: {value}")
+	# 		else:
+	# 			print(Fore.RED + "No task details found.")
+	# 	else:
+	# 		print(Fore.RED + "Failed to retrieve task details.")
 
 	# =========================================================
 
+	def short_uuid(uuid):
+		"""Return the short version of the UUID (up to the first dash)."""
+		return uuid.split('-')[0]
 
 	def run_taskwarrior_command(command):
 		try:
@@ -2107,24 +3235,28 @@ try:
 		spaces_per_level = 2  # adjust this if needed
 
 		# Ignore the first 4 and last 3 lines
-		lines = lines[4:-3]
+		lines = lines[4:] if len(lines) <= 7 else lines[4:-2]
 
 		output_lines = []  # Initialize the list to store all processed projects
 
-		for line in lines:
+		for i, line in enumerate(lines):
 			stripped = line.lstrip()
 			level = len(line) - len(stripped)
 
 			# Split the line into text and number, and only keep the text
-			text = stripped.split()[0]
+			parts = stripped.split()
+			if len(parts) < 2:
+				continue  # Skip lines that don't have both text and a number
+
+			text = parts[0]
 
 			if level % spaces_per_level != 0:
-				raise ValueError('Invalid indentation level in input')
+				raise ValueError(f'Invalid indentation level in input on line {i+5}')
 
 			level //= spaces_per_level
 
 			if level > last_level + 1:
-				raise ValueError('Indentation level increased by more than 1')
+				raise ValueError(f'Indentation level increased by more than 1 on line {i+5}')
 
 			level_text[level] = text
 
@@ -2132,19 +3264,263 @@ try:
 			level_text = {k: v for k, v in level_text.items() if k <= level}
 
 			output_line = '.'.join(level_text[l] for l in range(level + 1))
-
 			output_lines.append(output_line)  # Add each processed project to the list
 
 			last_level = level
-		
-		return output_lines  # Return the list of all processed projects
 
+		return output_lines  # Return the list of all processed projects
 
 	def call_and_process_task_projects2():
 		result = subprocess.run(['task', 'projects'], capture_output=True, text=True)
 		lines = result.stdout.splitlines()
 		project_list = process_input(lines)
+		# for project in project_list:
+		# 	print(f"{project}\n")
 		return project_list
+	
+
+
+
+
+	def review_projects():
+		lines = call_and_process_task_projects2()
+		
+		# Ask user where they want to start
+		start_choice = console.input("[deep_sky_blue1]Do you want to start from the beginning (B), from a specific project (S), or skip to No Project / Overdue tasks (K)? ")
+
+		if start_choice.lower() == 'k':
+			lines = []  # Skip all projects
+		elif start_choice.lower() == 's':
+			project_list = call_and_process_task_projects2()
+			project_name = search_project3(project_list)
+			try:
+				start_index = lines.index(project_name)
+				lines = lines[start_index:]
+			except ValueError:
+				console.print(Panel(f"Project '{project_name}' not found. Starting from the beginning.", style="bold yellow"))
+		# If 'B' or any other key, start from the beginning
+
+		for project in lines:
+			# Check if the project has pending tasks
+			if not has_pending_tasks(project):
+				continue  # Skip to the next project if there are no pending tasks
+			
+			while True:
+				# Display tasks for the current project
+				display_tasks(f"task project:{project} project.not:{project}. +PENDING export")
+				print("\n")
+				# Create a table for menu options
+				table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+				table.add_column("Option", style="orange_red1")
+				table.add_column("Description", style="deep_sky_blue1")
+				
+				table.add_row("TM", "Task Manager")
+				table.add_row("NT", "Add new task")
+				table.add_row("TW", "TW prompt")
+				table.add_row("DT", "View Dependency Tree")
+				table.add_row("AN", "Annotate task")
+				table.add_row("DD", "Assign due date")
+				table.add_row("TD", "Mark task as completed")
+				table.add_row("NP", "Next project")
+				table.add_row("SP", "Save progress and exit")
+				table.add_row("Enter", "Exit review")
+				table.add_row("R", "Refresh")
+				
+				console.print(Panel(table, title=f"Reviewing project: {project}", expand=False))
+				
+				choice = console.input("[deep_sky_blue1]Enter your choice: ")
+
+				if choice.lower() == "tm":
+					task_ID = console.input("[cyan]Please enter the task ID: ")
+					if task_ID:
+						task_manager(task_ID)
+				elif choice.lower() == "nt":
+					add_task_to_project(project)
+				elif choice.lower() == "tw":
+					handle_task()
+				elif choice.lower() == "dt":
+					dependency_tree(project)
+				elif choice.lower() == 'td':
+					task_id = console.input("Enter the task ID to mark as completed: ")
+					command = f"task {task_id} done"
+					execute_task_command(command)
+				elif choice.lower() == "an":
+					task_ID = console.input("[cyan]Please enter the task ID: ")
+					if task_ID:
+						annotation = console.input("[cyan]Enter the annotation: ")
+						subprocess.run(["task", task_ID, "annotate", annotation])
+				elif choice.lower() == "dd":
+					task_ID = console.input("[cyan]Please enter the task ID: ")
+					if task_ID:
+						due_date = console.input("[cyan]Enter the due date: ")
+						subprocess.run(["task", task_ID, "modify", f"due:{due_date}"])
+				elif choice.lower() == "np":
+					break  # Move to the next project
+				elif choice.lower() == "r":
+					console.clear()
+				elif choice.lower() == "sp":
+					console.print(Panel(f"Progress saved. You can resume from project '{project}' next time.", style="bold green"))
+					return  # Exit the review process
+				elif choice == "":
+					return  # Exit the entire review process
+				else:
+					console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+
+		console.print(Panel("All projects with pending tasks have been processed.", style="bold green"))
+		
+		# Review tasks without a project
+		while True:
+			# Check if there are any tasks without a project
+			try:
+				result = subprocess.run(["task", "project:", "+PENDING", "count"], capture_output=True, text=True, check=True)
+				task_count = int(result.stdout.strip())
+			except subprocess.CalledProcessError as e:
+				console.print(Panel(f"Error running task command: {e}", style="bold red"))
+				return
+			except ValueError:
+				console.print(Panel("Error parsing task count", style="bold red"))
+				return
+
+			if task_count == 0:
+				console.print(Panel("No tasks without a project. Moving to overdue tasks.", style="bold green"))
+				break
+
+			console.print(Panel(f"Found {task_count} tasks without a project. Starting review.", style="bold green"))
+			
+			# Display tasks without a project
+			display_tasks("task project: +PENDING export")
+			print("\n")
+			# Create a table for menu options
+			table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+			table.add_column("Option", style="orange_red1")
+			table.add_column("Description", style="deep_sky_blue1")
+			
+			table.add_row("TM", "Task Manager")
+			table.add_row("NT", "Add new task")
+			table.add_row("TW", "TW prompt")
+			table.add_row("AN", "Annotate task")
+			table.add_row("DD", "Assign due date")
+			table.add_row("TD", "Mark task as completed")
+			table.add_row("SP", "Save progress and exit")
+			table.add_row("Enter", "Continue to overdue tasks")
+			table.add_row("R", "Refresh")
+			
+			console.print(Panel(table, title="Reviewing tasks without a project", expand=False))
+			
+			choice = console.input("[deep_sky_blue1]Enter your choice: ")
+
+			if choice.lower() == "tm":
+				task_ID = console.input("[cyan]Please enter the task ID: ")
+				if task_ID:
+					task_manager(task_ID)
+			elif choice.lower() == "nt":
+				add_task_to_project("")  # Assuming this function can handle empty project name
+			elif choice.lower() == "tw":
+				handle_task()
+			elif choice.lower() == 'td':
+				task_id = console.input("Enter the task ID to mark as completed: ")
+				command = f"task {task_id} done"
+				execute_task_command(command)
+			elif choice.lower() == "an":
+				task_ID = console.input("[cyan]Please enter the task ID: ")
+				if task_ID:
+					annotation = console.input("[cyan]Enter the annotation: ")
+					subprocess.run(["task", task_ID, "annotate", annotation])
+			elif choice.lower() == "dd":
+				task_ID = console.input("[cyan]Please enter the task ID: ")
+				if task_ID:
+					due_date = console.input("[cyan]Enter the due date: ")
+					subprocess.run(["task", task_ID, "modify", f"due:{due_date}"])
+			elif choice.lower() == "r":
+				console.clear()
+			elif choice.lower() == "sp":
+				console.print(Panel("Progress saved. Exiting review.", style="bold green"))
+				return  # Exit the review process
+			elif choice == "":
+				break  # Proceed to overdue tasks
+			else:
+				console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+
+		# Review overdue tasks
+		while True:
+			# Check if there are any overdue tasks
+			try:
+				result = subprocess.run(["task", "due.before:today", "+PENDING", "count"], capture_output=True, text=True, check=True)
+				overdue_count = int(result.stdout.strip())
+			except subprocess.CalledProcessError as e:
+				console.print(Panel(f"Error running task command: {e}", style="bold red"))
+				return
+			except ValueError:
+				console.print(Panel("Error parsing overdue task count", style="bold red"))
+				return
+
+			if overdue_count == 0:
+				console.print(Panel("No overdue tasks. Review complete.", style="bold green"))
+				break
+
+			console.print(Panel(f"Found {overdue_count} overdue tasks. Starting review.", style="bold green"))
+			
+			# Display overdue tasks
+			display_tasks("task due.before:today +PENDING export")
+			print("\n")
+			# Create a table for menu options
+			table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+			table.add_column("Option", style="orange_red1")
+			table.add_column("Description", style="deep_sky_blue1")
+			
+			table.add_row("TM", "Task Manager")
+			table.add_row("AN", "Annotate task")
+			table.add_row("DD", "Change due date")
+			table.add_row("TD", "Mark task as completed")
+			table.add_row("SP", "Save progress and exit")
+			table.add_row("Enter", "Exit review")
+			table.add_row("R", "Refresh")
+			
+			console.print(Panel(table, title="Reviewing overdue tasks", expand=False))
+			
+			choice = console.input("[deep_sky_blue1]Enter your choice: ")
+
+			if choice.lower() == "tm":
+				task_ID = console.input("[cyan]Please enter the task ID: ")
+				if task_ID:
+					task_manager(task_ID)
+			elif choice.lower() == "an":
+				task_ID = console.input("[cyan]Please enter the task ID: ")
+				if task_ID:
+					annotation = console.input("[cyan]Enter the annotation: ")
+					subprocess.run(["task", task_ID, "annotate", annotation])
+			elif choice.lower() == "dd":
+				task_ID = console.input("[cyan]Please enter the task ID: ")
+				if task_ID:
+					new_due_date = console.input("[cyan]Enter the new due date: ")
+					subprocess.run(["task", task_ID, "modify", f"due:{new_due_date}"])
+			elif choice.lower() == 'td':
+				task_id = console.input("Enter the task ID to mark as completed: ")
+				command = f"task {task_id} done"
+				execute_task_command(command)
+			elif choice.lower() == "r":
+				console.clear()
+			elif choice.lower() == "sp":
+				console.print(Panel("Progress saved. Exiting review.", style="bold green"))
+				return  # Exit the review process
+			elif choice == "":
+				break  # Exit the overdue tasks review
+			else:
+				console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+
+		console.print(Panel("Review complete. All projects, tasks without a project, and overdue tasks have been processed.", style="bold green"))
+
+
+
+	def has_pending_tasks(project):
+		# Use Taskwarrior to get pending tasks for the project
+		command = f"task project:{project} project.not:{project}. status:pending count"
+		result = subprocess.run(command, shell=True, capture_output=True, text=True)
+		count = int(result.stdout.strip())
+		return count > 0
+
+
+
 
 	def search_project2(project_list):
 		completer = FuzzyWordCompleter(project_list)
@@ -2152,7 +3528,7 @@ try:
 		closest_match, match_score = process.extractOne(item_name, project_list)
 
 		# You can adjust the threshold based on how strict you want the matching to be
-		MATCH_THRESHOLD = 80  # For example, 80 out of 100
+		MATCH_THRESHOLD = 100  # For example, 80 out of 100
 
 		if match_score >= MATCH_THRESHOLD:
 			return closest_match
@@ -2218,12 +3594,1906 @@ try:
 
 			# =========================================================
 
+	def parse_datetime(due_date_str):
+		try:
+			return datetime.strptime(due_date_str, "%Y%m%dT%H%M%SZ") if due_date_str else None
+		except ValueError:
+			return None
 
 
 
+	def parse_iso_duration(duration_str):
+		"""Convert ISO-8601 duration string to hours"""
+		if not duration_str:
+			return 0
+		
+		try:
+			# Remove PT prefix
+			duration = duration_str.replace('PT', '')
+			hours = 0.0
+			
+			# Handle hours
+			if 'H' in duration:
+				h_split = duration.split('H')
+				hours += float(h_split[0])
+				duration = h_split[1]
+			
+			# Handle minutes
+			if 'M' in duration:
+				m_split = duration.split('M')
+				hours += float(m_split[0]) / 60
+				
+			return hours
+		except (ValueError, AttributeError):
+			return 0
+
+	def format_metrics_text(metrics):
+		"""Format metrics into aligned columns"""
+		return (
+			f"Tasks: {metrics['task_count']:,d} | "
+			f"Value: {metrics['total_value']:,.0f} (avg: {metrics['avg_value']:,.0f}) | "
+			f"Hours: {metrics['total_duration']:.1f}"
+		)
+
+	def display_tasks(command):
+		result = subprocess.run(command, shell=True, capture_output=True, text=True)
+		console = Console()
+		if result.stdout:
+			tasks = json.loads(result.stdout)
+			if not tasks:
+				console.print("No tasks found.", style="bold red")
+				return
+
+			project_metadata = load_project_metadata(file_path)
+			project_tag_map = defaultdict(lambda: defaultdict(list))
+			project_values = defaultdict(list)
+			project_durations = defaultdict(list)
+			now = datetime.now(timezone.utc).astimezone()
+
+			# Process tasks and collect metrics
+			for task in tasks:
+				project = task.get('project', 'No Project')
+				tags = task.get('tags', ['No Tag'])
+				description = task['description']
+				task_id = str(task['id'])
+
+				# Entry / creation date (for sub-branch #3)
+				created_date = None
+				delta_created_str = ""
+				if 'entry' in task:
+					try:
+						created_date = datetime.strptime(task['entry'], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+						delta_created = datetime.now(timezone.utc) - created_date
+						delta_created_str = f"{delta_created.days} days, {delta_created.seconds // 3600} hours ago"
+					except ValueError:
+						# If parsing fails, we’ll just store the raw string
+						created_date = task['entry']
+
+				due_date_str = task.get('due')
+				due_date = parse_datetime(due_date_str) if due_date_str else None
+
+				annotations = task.get('annotations', [])
+				duration = task.get('duration', '')
+				duration_hours = parse_iso_duration(duration)
+				project_durations[project].append(duration_hours)
+
+				original_priority = task.get('priority')
+				value = task.get('value')
+
+				try:
+					value = float(value) if value is not None else 0
+					project_values[project].append(value)
+				except ValueError:
+					value = 0
+
+				# Determine priority level
+				if original_priority:
+					priority_level = original_priority.upper()
+				elif value is not None:
+					if value >= 2500:
+						priority_level = 'H'
+					elif value >= 700:
+						priority_level = 'M'
+					else:
+						priority_level = 'L'
+				else:
+					priority_level = None
+
+				# Choose color based on priority level
+				if priority_level == 'H':
+					priority_color = 'bold red'
+				elif priority_level == 'M':
+					priority_color = 'bold yellow'
+				elif priority_level == 'L':
+					priority_color = 'dim green'
+				else:
+					priority_color = 'bold magenta'
+
+				# Determine due date color and text
+				due_color = "default_color"
+				delta_text = ""
+				if due_date:
+					delta = due_date - now
+					if delta.total_seconds() < 0:
+						due_color = "red"
+					elif delta.days >= 365:
+						due_color = "steel_blue"
+					elif delta.days >= 90:
+						due_color = "light_slate_blue"
+					elif delta.days >= 30:
+						due_color = "green_yellow"
+					elif delta.days >= 7:
+						due_color = "thistle3"
+					elif delta.days >= 3:
+						due_color = "yellow1"
+					elif delta.days == 0:
+						due_color = "bold turquoise2"
+					else:
+						due_color = "bold orange1"
+					delta_text = format_timedelta(delta)
+
+				for tag in tags:
+					project_tag_map[project][tag].append(
+						(
+							task_id,        # 0
+							description,    # 1
+							due_date,       # 2
+							annotations,    # 3
+							delta_text,     # 4
+							due_color,      # 5
+							duration,       # 6
+							priority_level, # 7
+							priority_color, # 8
+							value,          # 9
+							created_date,   # 10 (might be datetime or raw string)
+							delta_created_str  # 11
+						)
+					)
+
+			def get_project_totals(project_name):
+				total_value = sum(project_values[project_name])
+				total_duration = sum(project_durations[project_name])
+				task_count = len(project_values[project_name])
+
+				for other_project in project_values.keys():
+					if other_project.startswith(project_name + '.'):
+						sub_value, sub_duration, sub_count = get_project_totals(other_project)
+						total_value += sub_value
+						total_duration += sub_duration
+						task_count += sub_count
+
+				return total_value, total_duration, task_count
+
+
+			def create_task_details(task_info):
+				"""Create a Panel containing all task details"""
+				(task_id, description, due_date, annotations, delta_text, due_color, 
+				duration, priority_level, priority_color, value, created_date, 
+				delta_created_str) = task_info
+				
+				details = []
+				
+				# Priority, Value, Duration
+				info_line = []
+				if priority_level:
+					info_line.append(f"Priority: {priority_level}")
+				if value:
+					info_line.append(f"Value: {value}")
+				if duration:
+					info_line.append(f"Duration: {duration}")
+				if info_line:
+					details.append(Text(" | ".join(info_line), 
+									style="cyan3" if not priority_color else priority_color))
+				
+				# Due Date
+				if due_date:
+					formatted_due = due_date.strftime("%Y-%m-%d")
+					details.append(Text(f"Due: {formatted_due} ({delta_text})", style=due_color))
+				
+				# Creation Date
+				if created_date:
+					if isinstance(created_date, datetime):
+						created_str = created_date.strftime('%Y-%m-%d %H:%M:%S')
+						details.append(Text(f"Added: {created_str} ({delta_created_str})", 
+										style="steel_blue"))
+					else:
+						details.append(Text(f"Added: {created_date}", style="steel_blue"))
+				
+				# Annotations
+				if annotations:
+					details.append(Text("Annotations:", style="italic cornflower_blue"))
+					for annotation in annotations:
+						entry_datetime = datetime.strptime(annotation['entry'], "%Y%m%dT%H%M%SZ").strftime('%Y-%m-%d %H:%M:%S')
+						details.append(Text(f"  {entry_datetime} - {annotation['description']}", 
+										style="grey69"))
+				
+				return Panel.fit("\n".join(str(detail) for detail in details), 
+								title="Task Details",
+								border_style="grey50",
+								style="grey74")
+
+			tree = Tree("Task Overview", style="bold blue", guide_style="grey50")
+			
+			for project, tags in project_tag_map.items():
+				if project == 'No Project' and not any(tags.values()):
+					continue
+
+				# Create project hierarchy
+				project_levels = project.split(".")
+				current_branch = tree
+				current_path = []
+				
+				for i, level in enumerate(project_levels):
+					current_path.append(level)
+					current_project = '.'.join(current_path)
+					
+					# Calculate project metrics
+					total_value, total_duration, task_count = get_project_totals(current_project)
+					
+					# Create compact metrics display
+					metrics_summary = f"[grey70]({task_count} tasks"
+					if total_value > 0:
+						metrics_summary += f" | ${total_value:,.0f}"
+					if total_duration > 0:
+						metrics_summary += f" | {total_duration:.1f}h"
+					metrics_summary += ")[/grey70]"
+					
+					# Add project branch with inline metrics
+					found_branch = None
+					for child in current_branch.children:
+						if child.label.plain.startswith(level):
+							found_branch = child
+							break
+							
+					if not found_branch:
+						guide_style = guide_styles[i % len(guide_styles)]
+						branch_label = f"[cyan1]{level}[/cyan1] {metrics_summary}"
+						found_branch = current_branch.add(Text.from_markup(branch_label), 
+														guide_style="grey50")
+					
+					current_branch = found_branch
+
+				# Add tags and tasks with simplified display
+				for tag, tasks in tags.items():
+					if not tasks:
+						continue
+						
+					tag_branch = current_branch.add(Text(f"{tag}"), 
+												guide_style="yellow")
+					
+					# Sort tasks by due date
+					for task_info in sorted(tasks, key=lambda x: (x[2] is None, x[2])):
+						task_id, description, due_date, *_ = task_info
+						
+						# Create compact task display with white description
+						task_line = f"[indian_red]{task_id}[/indian_red] [white]{description}[/white]"
+						if due_date:
+							days_until = (due_date - now).days
+							if days_until < 0:
+								task_line += f" [red](Overdue: {abs(days_until)}d)[/red]"
+							elif days_until == 0:
+								task_line += " [yellow](Due today)[/yellow]"
+							elif days_until <= 7:
+								task_line += f" [yellow]({days_until}d left)[/yellow]"
+						
+						# Add expandable details using a Panel
+						task_branch = tag_branch.add(Text.from_markup(task_line))
+						details_panel = create_task_details(task_info)
+						task_branch.add(details_panel, guide_style="grey50")
+
+			console.print(tree)
+
+
+			
+	def parse_datetime(date_string):
+		# Parse the UTC datetime
+		utc_time = datetime.strptime(date_string, "%Y%m%dT%H%M%SZ")
+		utc_time = utc_time.replace(tzinfo=timezone.utc)
+		# Convert to local time
+		local_time = utc_time.astimezone(local_tz)
+		return local_time
+
+	def format_timedelta(delta):
+		is_overdue = delta.total_seconds() < 0
+		if is_overdue:
+			delta = abs(delta)  # Make delta positive for overdue tasks
+
+		total_seconds = int(delta.total_seconds())
+		years, remainder = divmod(total_seconds, 31536000)  # 365 days
+		months, remainder = divmod(remainder, 2592000)  # 30 days
+		weeks, remainder = divmod(remainder, 604800)  # 7 days
+		days, remainder = divmod(remainder, 86400)  # 1 day
+		hours, _ = divmod(remainder, 3600)  # 1 hour
+
+		parts = []
+		if years > 0:
+			parts.append(f"{years} year{'s' if years != 1 else ''}")
+		if months > 0:
+			parts.append(f"{months} month{'s' if months != 1 else ''}")
+		if weeks > 0:
+			parts.append(f"{weeks} week{'s' if weeks != 1 else ''}")
+		if days > 0:
+			parts.append(f"{days} day{'s' if days != 1 else ''}")
+		if hours > 0 or (years == 0 and months == 0 and weeks == 0 and days == 0):
+			parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+
+		detailed_str = " ".join(parts)
+
+		if is_overdue:
+			if delta.days == 0:
+				if hours == 0:
+					return ("Due NOW!")
+				else:
+					return f"Overdue by {hours} hour{'s' if hours != 1 else ''}"
+			else:
+				return f"Overdue by {delta.days} day{'s' if delta.days != 1 else ''}" + (f" ~ {detailed_str}" if len(parts) > 1 else "")
+		else:
+			if delta.days == 0:
+				if hours == 0:
+					return ("Due NOW!")
+				else:
+					return f"Due in {hours} hour{'s' if hours != 1 else ''}"
+			else:
+				return f"Due in {delta.days} day{'s' if delta.days != 1 else ''}" + (f" ~ {detailed_str}" if len(parts) > 1 else "")
+
+	def display_menu(console):
+
+		# console = Console()
+		table = Table(show_header=True, header_style="bold yellow")
+		table.add_column("Key", style="dim", width=2)
+		table.add_column("Action", min_width=20)
+		table.add_row("d", "Today's Tasks")
+		table.add_row("y", "Yesterday's Tasks")
+		table.add_row("t", "Tomorrow's Tasks")
+		table.add_row("w", "Current Week's Tasks")
+		table.add_row("m", "Current Month's Tasks")
+		table.add_row("l", "View Long-Term Plan")
+		table.add_row("o", "Overdue Tasks")
+		table.add_row("i", "Inbox Tasks")
+		table.add_row("h", "Handle Tasks")
+		table.add_row("b", "Back to main")
+		table.add_row("Enter", "Exit")
+
+		console.print(table)
+
+	def task_control_center(choice=None):
+		console = Console()
+		scope_command_map = {
+			'd': "task due:today +PENDING export",
+			'y': "task due:yesterday +PENDING export",
+			't': "task due:tomorrow status:pending export",
+			'w': "task +WEEK +PENDING export",
+			'm': "task +MONTH +PENDING export",
+			'o': "task due.before:today +PENDING export"
+		}
+
+		if choice is None:
+			while True:
+				console.print("[bold cyan]Task Control Center[/bold cyan]", justify="center")
+				display_menu(console)
+				choice = Prompt.ask("[bold yellow]Enter your choice[/bold yellow]")
+				
+				if choice == '':
+					#console.clear()
+					break
+				
+				process_choice(choice, console, scope_command_map)
+		else:
+			process_choice(choice, console, scope_command_map)
+
+	def process_choice(choice, console, scope_command_map):
+		if choice in scope_command_map:
+			#console.clear()
+			display_tasks(scope_command_map[choice])
+		elif choice == 'l':
+			#console.clear()
+			display_due_tasks()
+		elif choice == 'i':
+			#console.clear()
+			display_inbox_tasks()
+		elif choice == 'h':
+			handle_task()
+		elif choice == 'b':
+			main_menu()
+		else:
+			console.print("Invalid choice. Please try again.", style="bold red")
+
+# ------------------------------------------------------------------------------------
+# Inbox Processing - GTD Style
+
+	def greeting_pi():
+			action = questionary.select(
+				"What would you like to do?",
+				choices=[
+					"Process inbox tasks",
+					"Do a mind dump",
+					"Both",
+					"Exit"
+				]).ask()
+
+			if action == "Do a mind dump" or action == "Both":
+				lines = gtd_prompt()
+				if lines:
+					print("Adding the tasks to TaskWarrior database...")
+					uuids = [add_task_to_taskwarrior(line) for line in lines]
+					for uuid in uuids:
+						process_gtd(uuid)
+				console.print("Mind dump completed.", style="bold green")
+
+			if action == "Process inbox tasks" or action == "Both":
+				process_inbox_tasks()
+				console.print("Inbox tasks have been processed.", style="bold green")
+
+			if action == "Exit":
+				console.print("Goodbye!", style="bold blue")
+				return
+
+			console.print("All selected tasks have been processed and stored in the database.", style="bold blue")
+
+
+
+
+
+
+	def gtd_prompt():
+		console.print(Panel("Mind Dump (GTD Style)", style="bold magenta"))
+		console.print("Enter everything on your mind, line by line. When you're done, add empty line.", style="cyan")
+		lines = []
+		while True:
+			line = Prompt.ask("> ")
+			if line.strip().lower() == '':
+				break
+			if line:
+				lines.append(line)
+		return lines
+
+	def add_task_to_taskwarrior(description):
+		tw = TaskWarrior()
+		task = Task(tw, description=description, tags=['dump'])
+		task.save()
+		return task['uuid']
+
+	# def process_input(lines):
+	# 	level_text = {0: ''}
+	# 	last_level = -1
+	# 	spaces_per_level = 2  # adjust this if needed
+
+	# 	# Ignore the first 4 and last 3 lines
+	# 	lines = lines[4:-3]
+
+	# 	output_lines = []  # Initialize the list to store all processed projects
+
+	# 	for line in lines:
+	# 		stripped = line.lstrip()
+	# 		level = len(line) - len(stripped)
+
+	# 		# Split the line into text and number, and only keep the text
+	# 		text = stripped.split()[0]
+
+	# 		if level % spaces_per_level != 0:
+	# 			raise ValueError('Invalid indentation level in input')
+
+	# 		level //= spaces_per_level
+
+	# 		if level > last_level + 1:
+	# 			raise ValueError('Indentation level increased by more than 1')
+
+	# 		level_text[level] = text
+
+	# 		# Clear all deeper levels
+	# 		level_text = {k: v for k, v in level_text.items() if k <= level}
+
+	# 		output_line = '.'.join(level_text[l] for l in range(level + 1))
+
+	# 		output_lines.append(output_line)  # Add each processed project to the list
+
+	# 		last_level = level
+		
+	# 	return output_lines  # Return the list of all processed projects
+
+	# def call_and_process_task_projects2():
+	# 	result = subprocess.run(['task', 'projects'], capture_output=True, text=True)
+	# 	lines = result.stdout.splitlines()
+	# 	project_list = process_input(lines)
+	# 	return project_list
+
+	def search_project3(project_list):
+		if callable(project_list):
+			project_list = project_list()  # Ensure project_list is a list if it's a callable function
+		
+		if not project_list:
+			print("No projects available.")
+			return None, None  # Return None if project list is empty or invalid
+
+		completer = FuzzyCompleter(WordCompleter(project_list, ignore_case=True))
+		item_name = prompt("Enter a project name: ", completer=completer)
+		closest_match, match_score = process.extractOne(item_name, project_list)
+
+		MATCH_THRESHOLD = 100  # Adjust the threshold based on your preference
+
+		if match_score >= MATCH_THRESHOLD:
+			return closest_match
+		else:
+			return item_name  # Use the new name entered by the user if no close match found
+
+
+	def add_task_to_project2(project_name):
+		task_description = questionary.text("Enter the description for the new task:").ask()
+		
+		create_command = f"task add proj:'{project_name}' {task_description}"
+		execute_task_command(create_command)
+		
+		task_id = get_latest_task_id()
+		if task_id:
+			has_dependencies = questionary.confirm("Does this task have dependencies?").ask()
+			if has_dependencies:
+				add_dependent_tasks(task_description, project_name, task_id)
+		else:
+			print("Failed to retrieve the task ID.")
+
+	# def execute_task_command(command):
+	# 	subprocess.run(command, shell=True)
+
+	# def get_latest_task_id():
+	# 	try:
+	# 		result = subprocess.run(['task', '+LATEST', 'rc.json.array=on', 'export'], capture_output=True, text=True)
+	# 		tasks = json.loads(result.stdout)
+	# 		if tasks:
+	# 			return tasks[-1]['id']
+	# 	except (IndexError, json.JSONDecodeError) as e:
+	# 		print(f"Error retrieving latest task ID: {e}")
+	# 	return None
+
+
+	def modify_dependent_tasks(task_id, dependent_task_ids):
+		tw = TaskWarrior()
+		for dep_id in dependent_task_ids.split(','):
+			try:
+				dep_task = tw.tasks.get(id=dep_id)
+				modify_command = f"task {task_id} modify depends:{dep_id}"
+				execute_task_command(modify_command)
+				print(f"Task {task_id} now depends on task {dep_id}.")
+			except Task.DoesNotExist:
+				print(f"Task with ID {dep_id} does not exist. Skipping.")
+
+
+	def add_dependent_tasks(task_description, project_name, task_id):
+		print("\nMain Task Description:")
+		print(task_description)
+		print("\nHelpful Questions:")
+		print("What needs to happen for this to be possible?")
+		print("What are the sub-tasks?")
+		print("What are the consequences?\n")
+
+		print("Enter each sub-task on a new line. Type 'done' when you are finished.\n")
+
+		sub_tasks = []
+		while True:
+			sub_task = input("> ").strip()
+			if sub_task.lower() == 'done':
+				break
+			if sub_task:
+				sub_tasks.append(sub_task)
+		
+		print("\nMain Task Description:")
+		print(task_description)
+		print("Sub-tasks entered:")
+
+		sub_task_ids = []
+		for sub_task in sub_tasks:
+			print(f"- {sub_task}")
+			create_command = f"task add proj:'{project_name}' {sub_task}"
+			execute_task_command(create_command)
+			sub_task_id = get_latest_task_id()
+			if sub_task_id:
+				sub_task_ids.append(sub_task_id)  # collect task IDs as strings
+				print(f"  ID: {sub_task_id}")
+			else:
+				print("Failed to retrieve sub-task ID. Skipping.")
+
+		if sub_task_ids:  # ensure we have valid IDs before proceeding
+			action = questionary.select(
+				"How would you like to handle these sub-tasks?",
+				choices=[
+					"1. Add them as sub-tasks of the main task",
+					"2. Manual sort dependencies"
+				]).ask()
+
+			if action.startswith("1"):
+				modify_dependent_tasks(task_id, ','.join(map(str, sub_task_ids)))  # Convert IDs to strings
+			elif action.startswith("2"):
+				manual_sort_dependencies(sub_task_ids)
+			else:
+				print("No valid sub-tasks were added for processing.")
+
+
+	# def manual_sort_dependencies(sub_task_ids):
+	# 	console.print("\n[bold cyan]Manual Sorting of Dependencies:[/bold cyan]")
+	# 	for sub_task_id in sub_task_ids:
+	# 		console.print(f"- Sub-task ID: {sub_task_id}")
+		
+	# 	console.print("\nEnter the dependencies in the format 'task_id>subtask1=subtask2=subtask3>further_subtask'.")
+	# 	console.print("Use '>' for sequential dependencies and '=' for parallel subtasks.")
+	# 	console.print("You can enter multiple chains separated by commas.")
+	# 	console.print("Type 'done' when finished.\n")
+
+	# 	while True:
+	# 		dependency_input = Prompt.ask("> ").strip()
+	# 		if dependency_input.lower() == 'done':
+	# 			break
+			
+	# 		# Split the input into individual chains
+	# 		chains = dependency_input.split(',')
+			
+	# 		with console.status("[bold green]Setting dependencies...", spinner="dots") as status:
+	# 			for chain in chains:
+	# 				if '>' in chain or '=' in chain:
+	# 					# Split the chain into levels
+	# 					levels = chain.split('>')
+						
+	# 					for i in range(len(levels) - 1):
+	# 						parent_tasks = levels[i].split('=')
+	# 						child_tasks = levels[i+1].split('=')
+							
+	# 						# The last task in parent_tasks depends on all child_tasks
+	# 						parent_task = parent_tasks[-1].strip()
+	# 						for child_task in child_tasks:
+	# 							modify_command = f"task {parent_task} modify depends:{child_task.strip()}"
+	# 							execute_task_command(modify_command)
+	# 							console.print(f"Task {parent_task} now depends on task {child_task.strip()}.")
+	# 				else:
+	# 					console.print(f"[bold yellow]Warning:[/bold yellow] Skipping invalid chain: {chain}")
+
+	# 	console.print("[bold green]Dependency setting completed.[/bold green]")
+
+
+
+	def set_task_dependencies(dependency_input):
+		chains = dependency_input.split(',')
+		for chain in chains:
+			tasks = chain.split('>')
+			# Reverse to set up each as blocking the previous
+			tasks.reverse()
+			for i in range(len(tasks) - 1):
+				dependent_id = tasks[i].strip()
+				task_id = tasks[i + 1].strip()
+				modify_command = f"task {task_id} modify depends:{dependent_id}"
+				execute_task_command(modify_command)
+				print(f"Task {dependent_id} now depends on task {task_id}.")
+				
+
+
+
+	# Constants
+	TAG_DUMP = 'dump'
+	TAG_IN = 'in'
+	TAG_SOMEDAY = 'someday'
+	TAG_REFERENCE = 'unsorted'
+	TAG_NEXT = 'next'
+	PROJECT_MAYBE = 'Maybe'
+	PROJECT_RESOURCES = 'Resources.References'
+	PROJECT_WAITING_FOR = 'WaitingFor'
+
+	# Action Categories Enum for readability
+	class ActionCategory(Enum):
+		DELETE = '1'
+		SOMEDAY = '2'
+		REFERENCE = '3'
+		COMPLETED = '4'
+
+	def update_task_tags(task, add_tags, remove_tags):
+		# Use set operations to optimize tag updates
+		task['tags'].update(add_tags)
+		task['tags'].difference_update(remove_tags)
+
+	def ask_task_description(task):
+		"""Helper function to ask for task description."""
+		task['description'] = Prompt.ask("Please provide a better description")
+		task.save()
+
+	def set_task_due_date(task):
+		"""Helper function to set due date."""
+		due_date = console.input("Enter the due date: ")
+		task['due'] = due_date
+		task.save()
+
+	def ask_project_selection(task):
+		"""Helper function for project selection."""
+		project_list = call_and_process_task_projects2()
+		project = search_project3(project_list)
+		task['project'] = project
+		update_task_tags(task, [], [TAG_IN, TAG_DUMP])
+		return project
+
+	def process_gtd(uuid):
+		tw = TaskWarrior()
+		task = tw.tasks.get(uuid=uuid)
+		task['tags'].discard(TAG_DUMP)
+		console.print(Panel(f"Processing: {task['description']} uuid:{short_uuid(task['uuid'])}", style="bold green"))
+
+		if Confirm.ask("Do you want to elaborate on this or proceed?", default=False):
+			ask_task_description(task)
+
+		if not Confirm.ask("Is this actionable?", default=False):
+			process_non_actionable(task)
+		else:
+			process_actionable(task)
+
+	def process_non_actionable(task):
+		console.print("Choose a category for this item:", style="yellow")
+		choice = Prompt.ask("1. Forget (delete)\n2. Someday/Maybe list\n3. Reference\n4. Mark as completed!", choices=["1", "2", "3", "4"],default="4")
+		category = ActionCategory(choice)
+		
+		if category == ActionCategory.DELETE:
+			task.delete()
+		elif category == ActionCategory.SOMEDAY:
+			update_task_tags(task, [TAG_SOMEDAY], [TAG_IN, TAG_DUMP])
+			task['project'] = PROJECT_MAYBE
+		elif category == ActionCategory.REFERENCE:
+			update_task_tags(task, [TAG_REFERENCE], [TAG_IN, TAG_DUMP])
+			task['project'] = PROJECT_RESOURCES
+			ref_category = Prompt.ask("Add a category (tag) for this reference item?")
+			if ref_category:
+				task['tags'].add(f"{ref_category}")
+		elif category == ActionCategory.COMPLETED:
+			task.done()
+		else:
+			task['tags'].add('miscellaneous')
+
+		task.save()
+
+	def process_actionable(task):
+		if Confirm.ask("Is this a single-step task (not part of a project)?", default=False):
+			process_single_step(task)
+		else:
+			process_project_task(task)
+
+	def process_single_step(task):
+		if Confirm.ask("Is this a 2 minute task?", default=False):
+			if Confirm.ask("Do you want to do it now?", default=False):
+				task.done()
+				return
+
+		if not Confirm.ask("For me?", default=False):
+			to_whom = Prompt.ask("To whom?")
+			update_task_tags(task, [to_whom], [TAG_IN, TAG_DUMP])
+			task['project'] = PROJECT_WAITING_FOR
+			follow_up_date = Prompt.ask("When should you follow up? (YYYY-MM-DD)")
+			task['due'] = follow_up_date
+		else:
+			due_date = Prompt.ask("Assign due date (YYYY-MM-DD or leave blank)")
+			update_task_tags(task, [TAG_NEXT], [TAG_IN, TAG_DUMP])
+			if due_date:
+				task['due'] = due_date
+
+		task.save()
+
+	def process_project_task(task):
+		if Confirm.ask("See a basic project list before selecting?", default=False):
+			basic_summary()
+		
+		project = ask_project_selection(task)
+
+		if Confirm.ask("Do you want to set a due date to task?", default=False):
+			set_task_due_date(task)
+
+		console.print("Choose a category for this item:", style="yellow")
+		choice = Prompt.ask("1. Add dependent tasks\n2. Set dependency\nEnter.Continue\nEnter the number of your choice", choices=["1", "2", ""])
+
+		if choice == '1':
+			display_tasks(f"task pro:{project} +PENDING export")
+			add_dependent_tasks(task['description'], project, task['uuid'])
+		elif choice == '2':
+			dependency_tree(project)
+			manual_sort_dependencies()
+		else:
+			while Confirm.ask(f"Do you want to add another task for project: {project}?", default=False):
+				add_task_to_project2(project)
+		task.save()
+	def process_inbox_tasks():
+		tw = TaskWarrior()
+		
+		# Process dumped tasks
+		dump_tasks = tw.tasks.filter(status='pending', tags=[TAG_DUMP])
+		if dump_tasks:
+			console.print(Panel("Dumped tasks found.", style="bold yellow"))
+			for task in dump_tasks:
+				process_gtd(task['uuid'])
+
+		# Process inbox tasks
+		inbox_tasks = tw.tasks.filter(status='pending', tags=[TAG_IN])
+		if inbox_tasks:
+			console.print(Panel("Starting processing inbox tasks.", style="bold yellow"))
+			for task in inbox_tasks:
+				process_gtd(task['uuid'])
+
+
+# ------------------------------------------------------------------------------------
+# TASK MANAGER
+	from rich.tree import Tree
+	def display_task_details2(task):
+		console = Console()
+		
+		# Create the main tree
+		task_tree = Tree("Task Details")
+
+		# Add main task details
+		task_tree.add(Text(f"Task UUID: {short_uuid(task['uuid'])}", style="cyan"))
+		task_tree.add(Text(f"Description: {task['description']}", style="bold"))
+
+		# Handle the 'entry' date
+		if 'entry' in task:
+			try:
+				created_date = datetime.strptime(task['entry'], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+				delta = datetime.now(timezone.utc) - created_date
+				delta_str = f"{delta.days} days, {delta.seconds // 3600} hours ago"
+				task_tree.add(Text(f"Added on: {created_date.strftime('%Y-%m-%d %H:%M:%S')} ({delta_str})", style="light_sea_green"))
+			except ValueError:
+				task_tree.add(Text(f"Added on: {task['entry']}", style="light_sea_green"))
+
+		# Handle the 'due' date
+		if 'due' in task:
+			try:
+				due_date = datetime.strptime(task['due'], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+				delta = due_date - datetime.now(timezone.utc)
+				if delta.total_seconds() < 0:
+					delta_str = f"{abs(delta.days)} days, {abs(delta.seconds) // 3600} hours overdue"
+					task_tree.add(Text(f"Due Date: {due_date.strftime('%Y-%m-%d %H:%M:%S')} ({delta_str})", style="red"))
+				else:
+					delta_str = f"{delta.days} days, {delta.seconds // 3600} hours remaining"
+					task_tree.add(Text(f"Due Date: {due_date.strftime('%Y-%m-%d %H:%M:%S')} ({delta_str})", style="light_green"))
+			except ValueError:
+				task_tree.add(Text(f"Due Date: {task['due']}", style="red"))
+
+		if 'project' in task:
+			task_tree.add(Text(f"Project: {task['project']}", style="green"))
+		
+		if 'tags' in task:
+			task_tree.add(Text(f"Tags: {', '.join(task['tags'])}", style="yellow"))
+		
+		if 'ctx' in task:
+			task_tree.add(Text(f"Context: {task['ctx']}", style="magenta"))
+
+		# Handle annotations
+		annotations = task.get('annotations', [])
+		if annotations:
+			annotation_branch = task_tree.add(Text("Annotations:", style="white"))
+			for annotation in annotations:
+				entry_datetime = parse(annotation['entry'])
+				if entry_datetime.tzinfo is None or entry_datetime.tzinfo.utcoffset(entry_datetime) is None:
+					entry_datetime = entry_datetime.replace(tzinfo=timezone.utc)
+				entry_datetime = entry_datetime.astimezone(timezone.utc)
+				annotation_text = Text(f"{entry_datetime.strftime('%Y-%m-%d %H:%M:%S')} - {annotation['description']}", style="dim white")
+				annotation_branch.add(annotation_text)
+
+		# Create a panel with the tree
+		panel = Panel(
+			task_tree,
+			title="Task Details",
+			border_style="blue",
+			padding=(1, 1),
+			expand=False
+		)
+
+		# Print the panel
+		console.print(panel)
+
+
+	def task_manager(task_uuid):
+		while True:
+			tasks = get_tasks(task_uuid)
+			if not tasks:
+				console.print(Panel("No tasks found with the provided UUID.", style="bold red"))
+				return
+			current_task = tasks[0]
+			display_task_details2(current_task)
+
+			# Create a table for menu options
+			table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+			table.add_column("Option", style="orange_red1")
+			table.add_column("Description", style="cornflower_blue")
+
+			# Add the existing options
+			if 'project' in current_task and current_task['project']:
+				table.add_row("CP", "Change project")
+				table.add_row("AS", "Add Sub-tasks")
+				table.add_row("DT", "View Dependency Tree")
+				table.add_row("LT", "View logical tree")
+				table.add_row("SD", "Set Dependency")
+				table.add_row("RD", "Remove Dependency")
+			else:
+				table.add_row("AP", "Assign project")
+			
+			# Add the new "Update Context" option
+			table.add_row("CM", "Context Menu")
+
+			# Add the remaining options
+			table.add_row("TW", "TW prompt")
+			table.add_row("SP", "Search Project & Manage")
+			table.add_row("SA", "Select Another Task")
+			table.add_row("Enter", "Exit")
+
+			console.print(Panel(table, title="Task Management Options", expand=False))
+			choice = console.input("[yellow]Enter your choice: ")
+
+			if choice == 'cm':
+				context_menu(current_task)
+			elif choice == 'dt':
+				if 'project' in current_task and current_task['project']:
+					dependency_tree(current_task['project'])
+				else:
+					console.print(Panel("This task does not belong to any project.", style="bold red"))
+			elif choice in ['cp', 'ap']:
+				tw = TaskWarrior()
+				task = tw.get_task(uuid=task_uuid)
+				project_list = call_and_process_task_projects2()
+				project = search_project3(project_list)
+				command = ['task', task_uuid, 'modify', f'project:{project}']
+				subprocess.run(command, check=True)
+				console.print(Panel(f"Updated task {task_uuid} to project {project}.", style="bold green"))
+			elif choice == 'lt':
+				if 'project' in current_task and current_task['project']:
+					display_tasks(f"task pro:{current_task['project']} +PENDING export")
+				else:
+					console.print(Panel("No project associated with this task.", style="bold red"))
+			elif choice == 'as':
+				add_dependent_tasks(current_task['description'], current_task.get('project', ''), current_task['uuid'])
+				if 'project' in current_task and current_task['project']:
+					dependency_tree(current_task['project'])  # refresh the dependency tree
+			elif choice == 'sd':
+				#dependency_input = console.input("Enter the tasks and their dependencies in the format 'ID>ID>ID, ID>ID':\n")
+				manual_sort_dependencies("")
+				if 'project' in current_task and current_task['project']:
+					dependency_tree(current_task['project'])  # refresh the dependency tree
+			elif choice == 'rd':
+				task_ids_input = console.input("Enter the IDs of the tasks to remove dependencies (comma-separated):\n")
+				remove_task_dependencies(task_ids_input)
+				if 'project' in current_task and current_task['project']:
+					dependency_tree(current_task['project'])  # refresh the dependency tree
+			elif choice == 'tw':
+				handle_task()
+			elif choice == 'sp':
+				call_and_process_task_projects()
+			elif choice == 'sa':
+				new_task = console.input("Enter the IDs of the new task to load:\n")
+				tasks = get_tasks(new_task)
+				if not tasks:
+					console.print(Panel("No tasks found with the provided UUID.", style="bold red"))
+					return
+				current_task = tasks[0]
+			elif choice == '':
+				console.print(Panel("Exiting task manager.", style="bold green"))
+				break
+			else:
+				console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+
+			# Refresh the task details after each operation
+			task_uuid = current_task['uuid']  # Ensure we're using the correct UUID
+
+	def context_menu(task):
+		console = Console()
+		while True:
+			console.print(Panel("Context Menu", style="bold cyan"))
+			table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+			table.add_column("Option", style="orange_red1")
+			table.add_column("Description", style="cornflower_blue")
+			table.add_row("AC", "Add Context")
+			table.add_row("RC", "Remove Context")
+			table.add_row("VAC", "View All Contexts")
+			table.add_row("Enter", "Return to Main Menu")
+
+			console.print(table)
+			choice = console.input("[yellow]Enter your choice: ").upper()
+
+			if choice == 'AC':
+				add_context(task)
+			elif choice == 'RC':
+				remove_context(task)
+			elif choice == 'VAC':
+				view_all_contexts()
+			elif choice == '':
+				break
+			else:
+				console.print(Panel("Invalid choice. Please try again.", style="bold red"))
+
+	def add_context(task):
+		console = Console()
+		current_context = task.get('ctx', '')
+		console.print(f"Current context: {current_context}")
+
+		new_context = console.input("Enter the context to add: ").strip()
+		existing_contexts = current_context.split(',') if current_context else []
+		
+		if new_context and new_context not in existing_contexts:
+			existing_contexts.append(new_context)
+			new_context_string = ','.join(existing_contexts)
+			command = ['task', task['uuid'], 'modify', f'ctx:{new_context_string}']
+			subprocess.run(command, check=True)
+			console.print(Panel(f"Updated task context to: {new_context_string}", style="bold green"))
+		else:
+			console.print(Panel("Context already exists or invalid input. No changes made.", style="bold yellow"))
+
+	def remove_context(task):
+		console = Console()
+		current_context = task.get('ctx', '')
+		console.print(f"Current context: {current_context}")
+
+		existing_contexts = current_context.split(',') if current_context else []
+		if not existing_contexts:
+			console.print(Panel("No contexts to remove.", style="bold yellow"))
+			return
+
+		console.print("Existing contexts:")
+		for i, ctx in enumerate(existing_contexts, 1):
+			console.print(f"{i}. {ctx}")
+		
+		choice = console.input("Enter the number of the context to remove or type the context name: ")
+		if choice.isdigit() and 1 <= int(choice) <= len(existing_contexts):
+			removed_context = existing_contexts.pop(int(choice) - 1)
+		elif choice in existing_contexts:
+			existing_contexts.remove(choice)
+		else:
+			console.print(Panel("Invalid choice. No context removed.", style="bold red"))
+			return
+
+		new_context_string = ','.join(existing_contexts)
+		command = ['task', task['uuid'], 'modify', f'ctx:{new_context_string}']
+		subprocess.run(command, check=True)
+		console.print(Panel(f"Updated task context to: {new_context_string}", style="bold green"))
+
+	def view_all_contexts():
+		console = Console()
+		
+		command = ['task', 'status:pending', 'export']
+		result = subprocess.run(command, capture_output=True, text=True, check=True)
+		tasks = json.loads(result.stdout)
+
+		context_data = {}
+		for task in tasks:
+			contexts = task.get('ctx', '').split(',')
+			for context in contexts:
+				context = context.strip()
+				if context:
+					if context not in context_data:
+						context_data[context] = {'count': 0, 'tasks': []}
+					context_data[context]['count'] += 1
+					context_data[context]['tasks'].append((task['id'], task.get('description', 'No description')))
+
+		table = Table(title="All Contexts in Use", box=box.ROUNDED)
+		table.add_column("Context", style="cyan")
+		table.add_column("#", style="magenta")
+		table.add_column("Task IDs and Descriptions", style="green")
+
+		for context, data in sorted(context_data.items(), key=lambda x: x[1]['count'], reverse=True):
+			task_info = ', '.join([f"{id}, {desc}\n" for id, desc in data['tasks']])
+			table.add_row(context, str(data['count']), task_info)
+
+		console.print(table)
+		console.input("\nPress Enter to return to the Context Menu...")
+		
+	
+
+
+	# import subprocess
+	# import json
+	# from datetime import datetime, timedelta
+	# import re
+	# import pytz
+	# from collections import defaultdict
+	# from rich.console import Console
+	# from rich.panel import Panel
+	# from rich.text import Text
+	# from rich.table import Table
+	# from rich import print as rprint
+	# from rich.panel import Panel
+	# from rich.text import Text
+	# from rich import box
+
+	def task_organizer():
+		
+		from datetime import time
+		def get_tasks_for_day(date):
+			command = f"task due:{date} status:pending export"
+			result = subprocess.run(command, shell=True, capture_output=True, text=True)
+			tasks = json.loads(result.stdout)
+			#console.print(tasks)
+			return sorted(tasks, key=lambda x: x.get('due', ''))
+
+		def parse_duration(duration_str):
+			total_minutes = 0.0
+			if 'Y' in duration_str:
+				total_minutes += float(re.search(r'(\d+)Y', duration_str).group(1)) * 525600  # Approximate, doesn't account for leap years
+			if 'M' in duration_str and 'T' not in duration_str:
+				total_minutes += float(re.search(r'(\d+)M', duration_str).group(1)) * 43800  # Approximate, assumes 30-day months
+			if 'D' in duration_str:
+				total_minutes += float(re.search(r'(\d+)D', duration_str).group(1)) * 1440
+			if 'H' in duration_str:
+				total_minutes += float(re.search(r'(\d+)H', duration_str).group(1)) * 60
+			if 'M' in duration_str and 'T' in duration_str:
+				total_minutes += float(re.search(r'(\d+)M', duration_str).group(1))
+			if 'S' in duration_str:
+				total_minutes += float(re.search(r'(\d+)S', duration_str).group(1)) / 60
+			return total_minutes
+
+		def format_duration(minutes):
+			hours, mins = divmod(round(minutes), 60)
+			return f"{int(hours):02d}:{int(mins):02d}"
+
+		class TaskOrganizer:
+			def __init__(self):
+				self.console = Console()
+				self.current_date = (datetime.now() + timedelta(days=1)).date()
+				self.refresh_tasks()
+				script_directory = os.path.dirname(os.path.abspath(__file__))
+				self.notes_file = os.path.join(script_directory, 'daily_notes.jsonl')
+				self.load_notes()
+
+			def load_notes(self):
+				self.notes = {}
+				if os.path.exists(self.notes_file):
+					with open(self.notes_file, 'r') as f:
+						for line in f:
+							note = json.loads(line.strip())
+							date_str = note['date']
+							if date_str not in self.notes:
+								self.notes[date_str] = []
+							if 'color' not in note:
+								note['color'] = 'cyan'  # Set default color for old notes
+							self.notes[date_str].append(note)
+
+			def save_notes(self):
+				with open(self.notes_file, 'w') as f:
+					for date_notes in self.notes.values():
+						for note in date_notes:
+							json.dump(note, f)
+							f.write('\n')
+
+			def add_note(self, time, note, until="noend", color="cyan"):
+				date_str = datetime.now().strftime("%Y-%m-%d")
+				if date_str not in self.notes:
+					self.notes[date_str] = []
+				
+				max_index = max([max([n['index'] for n in date_notes] + [-1]) for date_notes in self.notes.values()] + [-1])
+				new_index = max_index + 1
+
+				new_note = {
+					"date": date_str,
+					"index": new_index,
+					"time": time,
+					"content": note,
+					"until": until,
+					"color": color
+				}
+				self.notes[date_str].append(new_note)
+				self.save_notes()
+				return new_index
+
+
+			def create_compact_view(self):
+				local_tz = pytz.timezone('Asia/Aden')  # Replace with your local timezone
+				start_of_day = datetime.combine(self.current_date, datetime.min.time())
+				start_of_day = local_tz.localize(start_of_day)
+				end_of_day = start_of_day.replace(hour=23, minute=59, second=59)
+				project_counts = self.get_pending_counts('projects')
+				tag_counts = self.get_pending_counts('tags')
+				
+				# Sort tasks by due time
+				sorted_tasks = sorted(self.tasks, key=lambda x: datetime.strptime(x['due'], "%Y%m%dT%H%M%SZ"))
+				
+				table = Table(title=f"Tasks for {self.current_date.strftime('%Y-%m-%d')}", expand=True)
+				table.add_column("Time", style="cyan", no_wrap=True)
+				table.add_column("Duration", style="white")
+				table.add_column("Task", style="white")
+				table.add_column("Project", style="blue")
+				table.add_column("Tags", style="yellow")
+				
+				current_time = start_of_day
+				
+				# Group tasks by their start time
+				grouped_tasks = []
+				for key, group in groupby(sorted_tasks, key=lambda x: datetime.strptime(x['due'], "%Y%m%dT%H%M%SZ").replace(tzinfo=pytz.UTC).astimezone(local_tz)):
+					group_list = list(group)
+					total_duration = sum(parse_duration(task.get('duration', 'PT60M')) for task in group_list)
+					grouped_tasks.append((key, group_list, total_duration))
+				
+				for task_time, tasks, total_duration in grouped_tasks:
+					# Add free time if there's a gap
+					if task_time > current_time:
+						free_time = (task_time - current_time).total_seconds() / 60
+						if free_time > 0:
+							table.add_row(
+								current_time.strftime("%H:%M"),
+								format_duration(free_time),
+								"Free Time",
+								"",
+								"",
+								style="turquoise4"
+							)
+					
+					# Add each task in the group individually
+					for i, task in enumerate(tasks):
+						task_duration = parse_duration(task.get('duration', 'PT60M'))
+						task_description = f"{task['id']}, {task['description']}"
+						table.add_row(
+							task_time.strftime("%H:%M") if i == 0 else "",  # Only show time for the first task in the group
+							format_duration(task_duration),
+							task_description,
+							task.get('project', ''),
+							", ".join(task.get('tags', [])),
+						)
+					
+					current_time = task_time + timedelta(minutes=total_duration)
+				
+				# Add any remaining free time at the end of the day
+				if current_time < end_of_day:
+					final_free_time = (end_of_day - current_time).total_seconds() / 60
+					if final_free_time > 0:
+						table.add_row(
+							current_time.strftime("%H:%M"),
+							format_duration(final_free_time),
+							"Free Time",
+							"",
+							"",
+							style="dim"
+						)
+				
+				return table
+
+			def display_compact_view(self):
+				date_panel = self.create_date_panel()
+				self.console.print(date_panel)
+				
+				compact_view = self.create_compact_view()
+				self.console.print(compact_view)
+				
+				notes_panel = self.create_notes_panel()
+				self.console.print(notes_panel)
+
+			def run(self):
+				view_mode = "calendar"  # Default view mode
+				while True:
+					self.console.clear()
+					if view_mode == "calendar":
+						self.display_calendar_view()
+					else:
+						self.display_compact_view()
+					self.display_menu()
+					choice = self.console.input("[yellow]Enter your choice: ")
+					self.process_command(choice)
+					if choice.lower() == 'v':
+						view_mode = "compact" if view_mode == "calendar" else "calendar"
+					self.refresh_tasks()
+
+
+			def remove_note(self, index):
+				for date_str, date_notes in self.notes.items():
+					self.notes[date_str] = [note for note in date_notes if note["index"] != index]
+				self.save_notes()
+
+			def edit_note(self, index, new_content, new_color=None):
+				for date_notes in self.notes.values():
+					for note in date_notes:
+						if note["index"] == index:
+							note["content"] = new_content
+							if new_color:
+								note["color"] = new_color
+							self.save_notes()
+							return
+
+			def get_notes_for_day(self):
+				all_notes = []
+				for date_str, date_notes in self.notes.items():
+					note_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+					for note in date_notes:
+						if note["until"] == "noend" or datetime.strptime(note["until"], "%Y-%m-%d").date() >= self.current_date:
+							if note_date <= self.current_date:
+								all_notes.append(note)
+				return sorted(all_notes, key=lambda x: (x["time"], x["index"]))
+				
+			# def run(self):
+			# 	while True:
+			# 		self.console.clear()
+			# 		self.display_calendar_view()
+			# 		self.display_menu()
+			# 		choice = self.console.input("[yellow]Enter your choice: ")
+			# 		self.process_command(choice)
+			# 		self.display_notes_panel()
+			# 		self.refresh_tasks()
+
+			def display_calendar_view(self):
+				calendar_view = self.create_calendar_view()
+				for item in calendar_view:
+					if isinstance(item, str):
+						self.console.print(item, end='')
+					else:
+						self.console.print(item)
+
+			def display_menu(self):
+				table = Table(box=box.ROUNDED, expand=False, show_header=False, border_style="cyan")
+				table.add_column("Option", style="orange_red1")
+				table.add_column("Description", style="turquoise2")
+
+				table.add_row("MV", "Move task")
+				table.add_row("D", "Change duration")
+				table.add_row("R", "Refresh")
+				table.add_row("S", "Shift task")
+				table.add_row("CD", "Select day")
+				table.add_row("AD", "Add task")
+				table.add_row("AS", "Arrange tasks by duration or value")
+				table.add_row("TW", "TW prompt")
+				table.add_row("V", "Toggle view (Calendar/Compact)")
+				table.add_row("B", "Go back one day")
+				table.add_row("F", "Go forward one day")
+				table.add_row("", "Exit")
+				table.add_row("==", "Note Options:")
+				table.add_row("AN", "Add note")
+				table.add_row("RN", "Remove note")
+				table.add_row("EN", "Edit note")
+
+
+				title = f"{self.current_date.strftime('%Y-%m-%d')}"
+				self.console.print(Panel(table, title=title, expand=False))
+
+
+			def process_command(self, choice):
+				if choice.lower() == 'n':
+					self.note_options()
+				elif choice.lower() == 'mv':
+					task_ids = self.console.input("[yellow]Enter task ID(s) separated by commas: ").split(',')
+					new_time = self.console.input("[yellow]Enter new time (HH:MM): ")
+					for task_id in task_ids:
+						self.move_task(task_id.strip(), new_time)
+				elif choice.lower() == 'v':
+					 pass  # 
+				elif choice.lower() == 'd':
+					task_ids = self.console.input("[yellow]Enter task ID(s) separated by commas: ").split(',')
+					new_duration = self.console.input("[yellow]Enter new duration (e.g., 1h30m): ")
+					for task_id in task_ids:
+						self.change_duration(task_id.strip(), new_duration)
+				elif choice.lower() == 'r':
+					self.refresh_tasks()
+				elif choice.lower() == 's':
+					shift_input = self.console.input("[yellow]Enter task ID(s) and shift duration (e.g., '321,322 +15min' or '321,322 -1h'): ")
+					task_ids, shift_duration = shift_input.split(maxsplit=1)
+					for task_id in task_ids.split(','):
+						self.shift_task(f"{task_id.strip()} {shift_duration}")
+				elif choice.lower() == 'cd':
+					date = self.console.input("[yellow]Enter date (YYYY-MM-DD) or 'today' or 'tomorrow': ")
+					self.select_day(date)
+				elif choice.lower() == 'ad':
+					self.add_task()
+				elif choice.lower() == 'tw':
+					handle_task()
+				elif choice.lower() == 'b':
+					self.current_date -= timedelta(days=1)
+					self.refresh_tasks()
+				elif choice.lower() == 'f':
+					self.current_date += timedelta(days=1)
+					self.refresh_tasks()
+				elif choice.lower() == 'an':
+					self.add_note_option()
+				elif choice.lower() == 'rn':
+					self.remove_note_option()
+				elif choice.lower() == 'en':
+					self.edit_note_option()
+				elif choice.lower() == 'as':
+					self.arrange_tasks()
+				elif choice.lower() == '':
+					exit()
+				else:
+					self.console.print(f"Unknown command: {choice}", style="bold red")
+
+			def arrange_tasks(self):
+				#local_tz = pytz.timezone('Asia/Aden')  # Replace with your local timezone
+				sort_by = self.console.input("[yellow]Sort tasks by (D)uration or (V)alue: ").lower()
+				if sort_by not in ['d', 'v']:
+					self.console.print("Invalid choice. Task arrangement cancelled.", style="bold red")
+					return
+
+				task_ids = self.console.input("[yellow]Enter task IDs separated by commas (or 'all' for all tasks): ")
+				if task_ids.lower() == 'all':
+					tasks_to_arrange = self.tasks
+				else:
+					task_id_list = [task_id.strip() for task_id in task_ids.split(',')]
+					tasks_to_arrange = [task for task in self.tasks if str(task['id']) in task_id_list]
+
+				start_time = self.console.input("[yellow]Enter start time (HH:MM): ")
+				try:
+					start_time_dt = datetime.strptime(start_time, "%H:%M").time()
+				except ValueError:
+					self.console.print("Invalid time format. Task arrangement cancelled.", style="bold red")
+					return
+
+				# Combine date and time, and then localize to the specified timezone
+				current_time = datetime.combine(self.current_date, start_time_dt)
+				current_time = local_tz.localize(current_time)
+
+				if sort_by == 'd':
+					sorted_tasks = sorted(tasks_to_arrange, key=lambda x: parse_duration(x.get('duration', 'PT60M')), reverse=True)
+				elif sort_by == 'v':
+					sorted_tasks = sorted(tasks_to_arrange, key=lambda x: float(x.get('value', 0)), reverse=True)
+
+				for task in sorted_tasks:
+					task_duration = parse_duration(task.get('duration', 'PT60M'))
+					due_time = current_time.astimezone(pytz.utc).strftime("%Y%m%dT%H%M%SZ")  # Convert to UTC for taskwarrior
+					subprocess.run(f"echo n | task {task['id']} modify due:{due_time}", shell=True)
+					self.console.print(f"Task {task['id']} arranged at {current_time.strftime('%H:%M %Z')}", style="bold green")
+					current_time += timedelta(minutes=task_duration)
+
+
+
+			def add_note_option(self):
+				time = self.console.input("[yellow]Enter time for the note (HH:MM) or press Enter for current time: ")
+				if not time:
+					time = datetime.now().strftime("%H:%M")
+					
+				self.console.print("[yellow]Enter note (press Enter twice to finish):")
+				lines = []
+				while True:
+					line = input()
+					if line == "":
+						break
+					lines.append(line)
+				note = "\n".join(lines)
+				
+				until = self.console.input("[yellow]Enter 'until' date (YYYY-MM-DD) or press Enter for today's date: ")
+				if not until:
+					until = self.current_date.strftime("%Y-%m-%d")
+				
+				color = self.console.input("[yellow]Enter note color (or press Enter for default cyan): ")
+				if not color:
+					color = "cyan"
+				
+				index = self.add_note(time, note, until, color)
+				self.console.print(f"Note added with index {index}", style="bold green")
+
+
+			def remove_note_option(self):
+				index = int(self.console.input("[yellow]Enter note index to remove: "))
+				self.remove_note(index)
+				self.console.print(f"Note with index {index} removed", style="bold green")
+
+			def edit_note_option(self):
+				index = int(self.console.input("[yellow]Enter note index to edit: "))
+				self.console.print("[yellow]Enter new note content (press Enter twice to finish):")
+				lines = []
+				while True:
+					line = input()
+					if line == "":
+						break
+					lines.append(line)
+				new_content = "\n".join(lines)
+				
+				new_color = self.console.input("[yellow]Enter new color (or press Enter to keep current color): ")
+				
+				self.edit_note(index, new_content, new_color if new_color else None)
+				self.console.print(f"Note with index {index} edited", style="bold green")
+
+								
+			def move_task(self, task_id, new_time):
+				subprocess.run(f"task {task_id.strip()} modify due:{self.current_date}T{new_time}", shell=True)
+				self.console.print(f"Task {task_id.strip()} moved to {new_time}", style="bold green")
+
+			def change_duration(self, task_id, new_duration):
+				subprocess.run(f"task {task_id.strip()} modify duration:{new_duration}", shell=True)
+				self.console.print(f"Duration for task {task_id.strip()} set to {new_duration}", style="bold green")
+
+			def shift_task(self, shift_input):
+				try:
+					task_id, shift_duration = shift_input.split(maxsplit=1)
+					subprocess.run(f"task {task_id.strip()} modify due:due{shift_duration}", shell=True)
+					self.console.print(f"Task {task_id.strip()} shifted by {shift_duration}", style="bold green")
+				except ValueError:
+					self.console.print("Invalid input format. Please use 'TASK_ID DURATION' (e.g., '321 +15min').", style="bold red")
+
+			def select_day(self, date):
+				if date.lower() == 'today':
+					self.current_date = datetime.now().date()
+				elif date.lower() == 'tomorrow':
+					self.current_date = datetime.now().date() + timedelta(days=1)
+				else:
+					try:
+						self.current_date = datetime.strptime(date, "%Y-%m-%d").date()
+					except ValueError:
+						self.console.print("Invalid date format. Please use YYYY-MM-DD.", style="bold red")
+						return
+				self.refresh_tasks()
+
+			def add_task(self):
+				option = self.console.input("[yellow]Choose option (N: From Next list, O: From Overdue list): ")
+
+				if option.lower() == 'n':
+					next_summary()
+					task_id = self.console.input("[yellow]Enter task ID: ")
+					due_time = self.console.input("[yellow]Enter due time (HH:MM): ")
+					command = f"task {task_id} modify due:{self.current_date}T{due_time} status:pending"
+				elif option.lower() == 'o':
+					display_overdue_tasks()
+					task_id = self.console.input("[yellow]Enter task ID: ")
+					due_time = self.console.input("[yellow]Enter due time (HH:MM): ")
+					command = f"task {task_id} modify due:{self.current_date}T{due_time} status:pending"
+				else:
+					self.console.print("Invalid option. Task not added.", style="bold red")
+					return
+
+				subprocess.run(command, shell=True)
+				self.console.print(f"Task {task_id} added for {due_time}", style="bold green")
+				self.refresh_tasks()
+
+			def refresh_tasks(self):
+				self.tasks = get_tasks_for_day(self.current_date)
+
+			def create_task_panel(self, tasks, start_time, project_counts, tag_counts, local_tz, time_range):
+				output = []
+
+				total_duration = sum(parse_duration(task.get('duration', 'PT60M')) for task in tasks)
+				new_end_time = start_time + timedelta(minutes=total_duration)
+
+				task_content = Text()
+				for task in tasks:
+					task_duration = parse_duration(task.get('duration', 'PT60M'))
+					task_due_time = datetime.strptime(task['due'], "%Y%m%dT%H%M%SZ")
+					task_due_time = pytz.utc.localize(task_due_time).astimezone(local_tz)
+					due_time_only = task_due_time.strftime('%H:%M')  # Extract only the due time
+					duration_symbols = "# " * (int(task_duration) // 15)
+					text_padding = " " * (len(str(task['id'])) + 3)
+					task_content.append(f"\n[{task['id']}] ", style="bold yellow")
+					task_content.append(f"{task['description']}\n", style="white")
+					task_content.append(f"{text_padding}Due: {due_time_only}\n", style="white")
+					task_content.append(f"{text_padding}Duration: {format_duration(task_duration)} {duration_symbols}\n", style="italic cyan")
+
+					if task.get('project'):
+						count = project_counts.get(task['project'], 0)
+						task_content.append(f"{text_padding}{task['project']} ({count})\n", style="blue")
+
+					if task.get('tags'):
+						tags_str = ', '.join(f"{tag} ({tag_counts.get(tag, 0)})" for tag in task['tags'])
+						task_content.append(f"{text_padding}{tags_str}\n", style="magenta")
+
+					if task.get('chained') == 'on' and 'chained_link' in task:
+						task_content.append(f"{text_padding}Link #: {task['chained_link']}\n", style="bold red")
+
+					if task.get('value'):
+						task_content.append(f"{text_padding}Value: {task['value']}\n", style="bold light_sea_green")
+
+					task_content.append("\n")
+
+				if len(tasks) > 1:
+					total_duration_symbols = ""
+					full_hours = int(total_duration) // 60
+					remaining_minutes = int(total_duration) % 60
+
+					if full_hours > 0:
+						total_duration_symbols += "@ " * full_hours
+
+					if remaining_minutes > 0:
+						total_duration_symbols += "# " * (remaining_minutes // 15)
+
+					task_content.append(f"{text_padding}Total Duration: {format_duration(total_duration)}\n{text_padding}{total_duration_symbols}\n", style="bold cyan")
+
+				panel_padding = 1
+
+				# Apply different panel styles based on the time range
+				if time_range == "Morning":
+					panel_style = "deep_pink2"
+				elif time_range == "Daytime":
+					panel_style = "steel_blue1"
+				else:
+					panel_style = "orange_red1"
+
+				task_panel = Panel(
+					task_content,
+					title=f"[bold {panel_style}]{start_time.strftime('%H:%M')}[/bold {panel_style}]",
+					expand=False,
+					border_style=panel_style,
+					padding=(panel_padding, 1)
+				)
+
+				output.append(task_panel)
+
+				return output, new_end_time
+
+			def create_calendar_view(self):
+				local_tz = pytz.timezone('Europe/London')  # Replace with your local timezone
+				start_of_day = datetime.combine(self.current_date, datetime.min.time())
+				start_of_day = local_tz.localize(start_of_day)
+				end_of_day = start_of_day.replace(hour=23, minute=59, second=59)
+				current_time = start_of_day
+				project_counts = self.get_pending_counts('projects')
+				tag_counts = self.get_pending_counts('tags')
+				sorted_tasks = sorted(self.tasks, key=lambda x: datetime.strptime(x['due'], "%Y%m%dT%H%M%SZ"))
+				print (sorted_tasks)
+				output = []
+				all_items = []
+
+				for task in sorted_tasks:
+					due_time = datetime.strptime(task['due'], "%Y%m%dT%H%M%SZ")
+					due_time = pytz.utc.localize(due_time).astimezone(local_tz)
+					task_duration = parse_duration(task.get('duration', 'PT60M'))
+					task_end_time = due_time + timedelta(minutes=task_duration)
+					all_items.append(('task', due_time, task, task_end_time))
+
+				all_items.sort(key=lambda x: x[1])
+				print(all_items)
+				next_item = None
+
+				while current_time < end_of_day:
+					if next_item is None or next_item[1] < current_time:
+						next_item = next((item for item in all_items if item[1] >= current_time), None)
+
+					if next_item:
+						free_time = (next_item[1] - current_time).total_seconds() / 60
+						if free_time > 0:
+							output.append(self.create_free_time_panel(free_time, current_time))
+						current_time = next_item[1]
+						grouped_tasks = [next_item[2]]
+						task_end_time = next_item[3]
+
+						while True:
+							overlapping_task = next((item for item in all_items if item[1] < task_end_time and item[2] not in grouped_tasks), None)
+							if overlapping_task:
+								grouped_tasks.append(overlapping_task[2])
+								task_end_time = max(task_end_time, overlapping_task[3])
+							else:
+								break
+
+						if current_time.time() < time(9):
+							time_range = "Morning"
+						elif current_time.time() < time(17):
+							time_range = "Daytime"
+						else:
+							time_range = "Evening"
+
+						task_panel_output, new_end_time = self.create_task_panel(grouped_tasks, current_time, project_counts, tag_counts, local_tz, time_range)
+						output.extend(task_panel_output)
+						current_time = new_end_time
+
+						# Remove all grouped tasks from all_items
+						all_items = [item for item in all_items if item[2] not in grouped_tasks]
+					else:
+						free_time = (end_of_day - current_time).total_seconds() / 60
+						if free_time > 0:
+							output.append(self.create_free_time_panel(free_time, current_time))
+						break
+
+				return output
+
+			# def create_notes_panel(self):
+			# 	notes = self.get_notes_for_day()
+			# 	notes_content = Text()
+
+			# 	for note in notes:
+			# 		notes_content.append(f"[{note['index']}] {note['time']}:\n", style="italic yellow")
+			# 		for line in note['content'].split('\n'):
+			# 			notes_content.append(f"  \n{line}", style="cyan")
+			# 		notes_content.append("\n")
+
+			# 	if not notes_content:
+			# 		notes_content.append("No notes for today.\n", style="italic yellow")
+
+			# 	notes_panel = Panel(
+			# 		notes_content,
+			# 		title="Notes",
+			# 		border_style="steel_blue1",
+			# 		padding=(1, 1)
+			# 	)
+
+			# 	return notes_panel
+
+			def create_date_panel(self):
+				from pyfiglet import Figlet
+				import random
+				formatted_date = self.current_date.strftime("%A       %B %d %Y")
+				f = Figlet(font='doom')
+				rendered_text = f.renderText(formatted_date)
+				
+				pending_count = self.get_pending_counts('pending')
+				completed_count = self.get_pending_counts('completed')
+				
+				# Create the full text to display
+				full_text = f"{rendered_text}\nPending: {pending_count}\nCompleted: {completed_count}"
+				
+				# Calculate the width of the panel based on the longest line in full_text
+				max_line_length = max(len(line) for line in full_text.split('\n'))
+				
+				# Adjust the panel width to be slightly larger than the longest line
+				panel_width = max_line_length + 4  # Adding a buffer for padding
+				random_color = random.choice(colors)
+				# Generate the panel
+				return Panel(
+					Text(full_text, style=random_color),
+					border_style=random_color,
+					width=panel_width
+				)
+
+			def display_calendar_view(self):
+				# Create the date panel
+				date_panel = self.create_date_panel()
+
+				# Print the date panel
+				self.console.print(date_panel)
+
+				# Generate and print the calendar view
+				calendar_view = self.create_calendar_view()
+				for item in calendar_view:
+					self.console.print(item)
+				
+				# Print the notes panel
+				self.console.print(self.create_notes_panel())
+
+			def create_free_time_panel(self, free_time, start_time):
+				free_panel_padding = 1
+				return Panel(
+					Text(f"Free Time: {format_duration(free_time)}", style="bold chartreuse1"),
+					title=f"{start_time.strftime('%H:%M')}",
+					expand=False,
+					border_style="gray89",
+					padding=(free_panel_padding, 1)
+				)
+
+
+
+			def display_notes_panel(self):
+				notes_panel = self.create_notes_panel()
+				self.console.print(notes_panel)
+
+			def create_notes_panel(self):
+				notes = self.get_notes_for_day()
+				notes_content = Text()
+
+				for note in notes:
+					notes_content.append(f"\n[{note['index']}] {note['time']}: \n", style="bold white")
+					if self.current_date.strftime("%Y-%m-%d") != note['until']:
+						if note['until'] == 'noend':
+							notes_content.append("Forever note!\n", style="italic white")
+						else:
+							notes_content.append(f"Until:{note['until']}\n", style="italic white")
+					notes_content.append(f"{note['content']}\n", style=f"italic {note['color']}")
+
+				if not notes:
+					notes_content.append("No notes for today.\n", style="italic yellow")
+
+				notes_panel = Panel(
+					notes_content,
+					title="[bold magenta]Notes[/bold magenta]",
+					border_style="bright_cyan",
+					padding=(1, 1)
+				)
+
+				return notes_panel
+
+			def get_pending_counts(self, attribute):
+				counts = defaultdict(int)
+
+				def run_command(command):
+					result = subprocess.run(command, shell=True, capture_output=True, text=True)
+					try:
+						return int(result.stdout.strip())
+					except ValueError:
+						print(f"Failed to parse count for command '{command}': {result.stdout.strip()}")
+						return 0
+
+				if attribute == 'tags':
+					unique_tags = set(tag for task in self.tasks for tag in task.get('tags', []))
+					for tag in unique_tags:
+						command = f"task +{tag} +PENDING count"
+						counts[tag] = run_command(command)
+				elif attribute == 'projects':
+					unique_projects = set(task.get('project') for task in self.tasks if task.get('project'))
+					for project in unique_projects:
+						command = f"task project:{project} +PENDING count"
+						counts[project] = run_command(command)
+				elif attribute == 'pending':
+					command = f"task due:{self.current_date} status:pending count"
+					counts = run_command(command)
+				elif attribute == 'completed':
+					command = f"task due:{self.current_date} status:completed count"
+					counts = run_command(command)
+
+				return counts
+
+
+		TaskOrganizer().run()
+
+		if __name__ == '__main__':
+			task_organizer()
+
+
+
+# x_x
+	def update_metadata_field(item_name, field_to_update):
+		console = Console()
+		# Load from SultanDB
+		script_directory = os.path.dirname(os.path.abspath(__file__))
+		file_path = os.path.join(script_directory, "sultandb.json")
+		aors, projects = load_sultandb(file_path)
+
+		# Combine all items
+		all_items = aors + projects
+
+		# Try to find the selected item directly
+		selected_item = next((item for item in all_items if item['name'] == item_name), None)
+
+		if not selected_item:
+			# If not found, and item_name starts with "AoR.", try without the prefix
+			if item_name.startswith("AoR."):
+				item_name_no_prefix = item_name[4:]  # Remove "AoR."
+				selected_item = next((item for item in all_items if item['name'] == item_name_no_prefix), None)
+			else:
+				# If not an AoR, try adding "AoR." prefix
+				item_name_with_prefix = "AoR." + item_name
+				selected_item = next((item for item in all_items if item['name'] == item_name_with_prefix), None)
+
+		if not selected_item:
+			console.print(f"No metadata found for {item_name}.", style="bold red")
+			return
+
+		# Proceed to update the metadata field
+		if field_to_update == 'description':
+			# Update Description
+			new_description = console.input("Enter new description: ")
+			selected_item['description'] = new_description
+			console.print("Description updated.", style="bold green")
+		elif field_to_update == 'standard_or_outcome':
+			# Update Standard or Outcome
+			if selected_item['name'].startswith("AoR."):
+				field_name = "standard"
+			else:
+				field_name = "outcome"
+			new_value = console.input(f"Enter new {field_name}: ")
+			selected_item[field_name] = new_value
+			console.print(f"{field_name.capitalize()} updated.", style="bold green")
+		elif field_to_update == 'annotations':
+			# Add Annotation
+			timestamp = datetime.now().isoformat()
+			content = console.input("Enter annotation content: ")
+			annotation = {'timestamp': timestamp, 'content': content}
+			if 'annotations' not in selected_item:
+				selected_item['annotations'] = []
+			selected_item['annotations'].append(annotation)
+			console.print("Annotation added.", style="bold green")
+		elif field_to_update == 'workLogs':
+			# Add Work Log
+			timestamp = datetime.now().isoformat()
+			content = console.input("Enter work log content: ")
+			work_log = {'timestamp': timestamp, 'content': content}
+			if 'workLogs' not in selected_item:
+				selected_item['workLogs'] = []
+			selected_item['workLogs'].append(work_log)
+			console.print("Work log added.", style="bold green")
+		else:
+			console.print("Invalid field to update.", style="bold red")
+			return
+
+		# Save changes to sultandb.json
+		# Update the item in the original list
+		if selected_item in aors:
+			# Update AoRs
+			for idx, aor in enumerate(aors):
+				if aor['name'] == selected_item['name']:
+					aors[idx] = selected_item
+					break
+		elif selected_item in projects:
+			# Update Projects
+			for idx, project in enumerate(projects):
+				if project['name'] == selected_item['name']:
+					projects[idx] = selected_item
+					break
+
+		# Save to file
+		save_sultandb(file_path, aors, projects)
+		console.print("Changes saved to SultanDB.", style="bold green")
+
+
+
+
+# ------------------------------------------------------------------------------------
+
+	def main_menu():
+		interactive_prompt(file_path)
 # ==================
 
-
+	delimiter = ('-' * 40)
 	if __name__ == "__main__":
 		main()
 		
@@ -2235,4 +5505,4 @@ try:
 	
 
 except KeyboardInterrupt:
-	print("\nYou have to be your own hero.\n\nDo the impossible and you are never going to doubt yourself again!")
+	print("\nYou have to be your own hero.\n\nDo the impossible and you are never going to doubt yourself again!\n\n\nPractice so hard that winning becomes easy.")
