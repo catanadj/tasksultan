@@ -35,7 +35,8 @@ from rich.text import Text
 from rich import box
 import re
 from enum import Enum
-
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.prompt import IntPrompt
 from itertools import groupby
 from operator import itemgetter
 
@@ -1623,6 +1624,60 @@ try:
 
 		console.print(tree)
 
+	def add_project_metadata_to_tree_2(metadata, branch):
+		"""Add project metadata as styled sub-branches to the given branch"""
+		# Check if there's any metadata to display
+		has_metadata = any([
+			metadata.get('description'),
+			metadata.get('standard'),
+			metadata.get('outcome'),
+			metadata.get('annotations'),
+			metadata.get('workLogs')
+		])
+		
+		if not has_metadata:
+			return
+		metadata_branch = branch.add(Text("📋 Metadata", style="bold cyan"), guide_style="cyan")
+		
+		# Description field
+		if metadata.get('description'):
+			metadata_branch.add(Text.from_markup(
+				f"[bold steel_blue]Description:[/bold steel_blue] [white]{metadata['description']}[/white]"
+			), guide_style="steel_blue")
+		
+		# Standard (for AoRs) or Outcome (for Projects)
+		if metadata.get('standard'):
+			metadata_branch.add(Text.from_markup(
+				f"[bold cornflower_blue]Standard:[/bold cornflower_blue] [white]{metadata['standard']}[/white]"
+			), guide_style="cornflower_blue")
+		elif metadata.get('outcome'):
+			metadata_branch.add(Text.from_markup(
+				f"[bold green_yellow]Outcome:[/bold green_yellow] [white]{metadata['outcome']}[/white]"
+			), guide_style="green_yellow")
+		
+		# Annotations
+		if metadata.get('annotations'):
+			annotations_branch = metadata_branch.add(
+				Text("📝 Annotations", style="bold orchid"), 
+				guide_style="orchid"
+			)
+			for annotation in metadata['annotations']:
+				timestamp = datetime.fromisoformat(annotation['timestamp']).strftime('%Y-%m-%d %H:%M')
+				annotations_branch.add(Text.from_markup(
+					f"[yellow]{timestamp}[/yellow] [white]{annotation['content']}[/white]"
+				), guide_style="dim orchid")
+		
+		# Work Logs
+		if metadata.get('workLogs'):
+			worklogs_branch = metadata_branch.add(
+				Text("📊 Work Logs", style="bold gold1"), 
+				guide_style="gold1"
+			)
+			for log in metadata['workLogs']:
+				timestamp = datetime.fromisoformat(log['timestamp']).strftime('%Y-%m-%d %H:%M')
+				worklogs_branch.add(Text.from_markup(
+					f"[grey70]{timestamp}[/grey70] [white]{log['content']}[/white]"
+				), guide_style="dim gold1")
 
 
 	def add_project_metadata_to_tree(metadata, parent_branch):
@@ -2916,170 +2971,185 @@ try:
 			return []
 
 
-	def ask_question(question):
-		while True:
-			response = input(question + Fore.WHITE + " (0-5, 'skip', 'done', 'del'): \n:=> ").strip().lower()
-			if response in ['skip', 'done', 'del']:
-				return response
-			try:
-				response = int(response)
-				if 0 <= response <= 5:
-					return response
-				else:
-					print(Fore.RED + "Please enter a number between 0 and 5.")
-			except ValueError:
-				print("x_x")
-				print(Fore.RED + "Invalid input. Please enter a number between 0 and 5, 'skip', 'done', or 'del'.")
+	# from rich.console import Console
+	# from rich.panel import Panel
+	# from rich.table import Table
+	# from rich import box
+	# from rich.prompt import IntPrompt
 
-	def ask_questions():
-		print(Fore.RED + "\nAssessing Importance:")
-		imp_questions = [
-			# Existing importance questions
-			Fore.BLUE + "Impact on Objectives: How will completing this task impact your short-term and long-term objectives or goals?\n0 - No impact.\n1 - Negligible/Uncertain\n2 - Small impact.\n3 - Medium impact.\n4 - High impact.\n5 - Critical\n",
-			Fore.GREEN + "Consequences of Neglect: What are the consequences if this task is not completed?\n0 - No consequences.\n1 - Minor inconvenience.\n2 - Moderate inconvenience.\n3 - Significant inconvenience.\n4 - Major issue.\n5 - Catastrophic consequences.\n",
-			Fore.CYAN + "Value Addition: How much value does completing this task add to your project or overall work?\n0 - No value.\n1 - Little value.\n2 - Some value.\n3 - Considerable value.\n4 - High value.\n5 - Exceptional value.\n",
-			Fore.WHITE + "Stakeholder Expectations: Are there any stakeholders (like a boss, client, or team) who consider this task critical?\n0 - No stakeholders.\n1 - Low importance to stakeholders.\n2 - Some importance to stakeholders.\n3 - Important to some stakeholders.\n4 - Important to many stakeholders.\n5 - Critical to key stakeholders.\n",
-			Fore.YELLOW + "Development Opportunities: Does this task offer any opportunities for personal or professional growth?\n0 - No growth opportunities.\n1 - Very little growth.\n2 - Some growth.\n3 - Moderate growth.\n4 - Significant growth.\n5 - Exceptional growth.\n",
-			Fore.MAGENTA + "Regret Minimization: In 20 years, will you regret not doing this?\n0 - No regret.\n1 - Very little regret.\n2 - Some regret.\n3 - Moderate regret.\n4 - Significant regret.\n5 - Extreme regret.\n",
-			# Additional importance questions
-			Fore.YELLOW + "Alignment with Personal Values: How well does this task align with your personal or organizational values?\n0 - No alignment.\n1 - Very low alignment.\n2 - Low alignment.\n3 - Moderate alignment.\n4 - High alignment.\n5 - Complete alignment.\n",
-			Fore.CYAN + "Long-Term Benefits: Does completing this task contribute to long-term goals or benefits?\n0 - No contribution.\n1 - Minimal contribution.\n2 - Some contribution.\n3 - Moderate contribution.\n4 - Significant contribution.\n5 - Critical contribution.\n",
-			Fore.GREEN + "Unique Ability: Is this task something that you are uniquely qualified to do?\n0 - Anyone can do it.\n1 - Many people can do it.\n2 - Some people can do it.\n3 - Few people can do it.\n4 - Very few people can do it.\n5 - Only you can do it.\n",
-			Fore.BLUE + "Opportunity Cost: What other important tasks could you be doing instead of this one?\n0 - Missing out on critical tasks.\n1 - Missing out on important tasks.\n2 - Some important tasks.\n3 - Less important tasks.\n4 - Trivial tasks.\n5 - Not missing out on anything else.\n",
-			Fore.MAGENTA + "Financial Impact: What is the financial impact of completing this task?\n0 - No financial impact.\n1 - Minimal impact.\n2 - Some impact.\n3 - Moderate impact.\n4 - Significant impact.\n5 - Critical financial impact.\n",
-		]
-		# Rationale Behind the Weights
-
-		# Importance weights (adjusted for high performance)
-		importance_weights = [5, 3, 4, 3, 4, 5, 5, 5, 4, 3, 5]
-
-		# Importance Questions
-		# Impact on Objectives (Weight: 5):
-
-		# Core to achieving goals; high weight ensures tasks contributing directly to objectives are prioritized.
-		# Consequences of Neglect (Weight: 3):
-
-		# Important but less so than proactive impact; moderate weight.
-		# Value Addition (Weight: 4):
-
-		# High performers seek tasks that add significant value; high weight.
-		# Stakeholder Expectations (Weight: 3):
-
-		# Important for maintaining relationships; moderate weight.
-		# Development Opportunities (Weight: 4):
-
-		# Personal growth is crucial; high weight.
-
-		# Regret Minimization (Weight: 5):
-		# Regret is painful and nothing can be done to change what has not been done, high weight.
-
-		# Alignment with Personal Values (Weight: 5):
-
-		# Ensures tasks are meaningful; highest weight.
-		# Long-Term Benefits (Weight: 5):
-
-		# Focus on sustainability and future gains; highest weight.
-		# Unique Ability (Weight: 4):
-
-		# Leverage unique skills for maximum impact; high weight.
-		# Opportunity Cost (Weight: 3):
-
-		# Important to consider what else could be done; moderate weight.
-		# Financial Impact (Weight: 5):
-
-		# Direct influence on success metrics; highest weight.
-
-
-		importance_scores = []
-		for i, q in enumerate(imp_questions):
-			score = ask_question(q)
-			if score in ['skip', 'done', 'del']:
-				return score
-			weighted_score = score * importance_weights[i]
-			importance_scores.append(weighted_score)
-
-		print(Fore.RED + "\nAssessing Urgency:")
-		urg_questions = [
-			# Existing urgency questions
-			Fore.RED + "Deadlines: Is there a fixed deadline for this task, and how soon is it?\n0 - No deadline.\n1 - Far in the future.\n2 - Somewhat distant.\n3 - Approaching soon.\n4 - Imminent.\n5 - Immediate.\n",
-			Fore.CYAN + "Dependency: Are other tasks or people dependent on the completion of this task?\n0 - No dependency.\n1 - Very low dependency.\n2 - Low dependency.\n3 - Moderate dependency.\n4 - High dependency.\n5 - Critical dependency.\n",
-			Fore.BLUE + "Time Sensitivity: Will the task become more difficult or impossible if not done soon?\n0 - Not time-sensitive.\n1 - Very low sensitivity.\n2 - Low sensitivity.\n3 - Moderate sensitivity.\n4 - High sensitivity.\n5 - Extremely time-sensitive.\n",
-			Fore.WHITE + "Risk of Delay: What are the risks or costs associated with delaying this task?\n0 - No risks.\n1 - Very low risk.\n2 - Low risk.\n3 - Moderate risk.\n4 - High risk.\n5 - Extreme risk.\n",
-			Fore.YELLOW + "Immediate Benefit: Is there an immediate benefit or relief from completing this task quickly?\n0 - No immediate benefit.\n1 - Very little benefit.\n2 - Some benefit.\n3 - Considerable benefit.\n4 - High benefit.\n5 - Exceptional benefit.\n",
-			# Additional urgency questions
-			Fore.MAGENTA + "External Deadlines: Is there an externally imposed deadline (e.g., from a client or regulatory body)?\n0 - No external deadline.\n1 - Deadline far in the future.\n2 - Approaching but not urgent.\n3 - Deadline soon.\n4 - Deadline very soon.\n5 - Immediate deadline.\n",
-			Fore.GREEN + "Resource Availability: Are the resources needed for this task available now but may not be later?\n0 - Resources always available.\n1 - Resources unlikely to become unavailable.\n2 - May become unavailable in the distant future.\n3 - May become unavailable soon.\n4 - Likely to become unavailable soon.\n5 - Becoming unavailable immediately.\n",
-			Fore.CYAN + "Impact of Delay on Others: Will delaying this task negatively affect others?\n0 - No impact on others.\n1 - Minimal impact.\n2 - Some impact.\n3 - Moderate impact.\n4 - Significant impact.\n5 - Critical impact.\n",
-			Fore.BLUE + "Time-Sensitive Opportunities: Does this task involve a time-sensitive opportunity that will be lost if not acted upon quickly?\n0 - No time-sensitive opportunity.\n1 - Very low sensitivity.\n2 - Low sensitivity.\n3 - Moderate sensitivity.\n4 - High sensitivity.\n5 - Extremely time-sensitive.\n",
-		]
-
-		# Urgency weights (adjusted for high performance)
-		urgency_weights = [5, 4, 3, 4, 2, 5, 4, 4, 5]
-		# Urgency Questions
-		# Deadlines (Weight: 5):
-
-		# Meeting deadlines is critical; highest weight.
-		# Dependency (Weight: 4):
-
-		# Unblocking others is important; high weight.
-		# Time Sensitivity (Weight: 3):
-
-		# Important but less than deadlines; moderate weight.
-		# Risk of Delay (Weight: 4):
-
-		# Avoiding negative consequences; high weight.
-		# Immediate Benefit (Weight: 2):
-
-		# Less critical than long-term gains; lower weight.
-		# External Deadlines (Weight: 5):
-
-		# Non-negotiable deadlines; highest weight.
-		# Resource Availability (Weight: 4):
-
-		# Maximizing use of available resources; high weight.
-		# Impact of Delay on Others (Weight: 4):
-
-		# Maintaining team efficiency; high weight.
-		# Time-Sensitive Opportunities (Weight: 5):
-
-		# Capitalizing on fleeting opportunities; highest weight.
-
-
-		urgency_scores = []
-		for i, q in enumerate(urg_questions):
-			score = ask_question(q)
-			if score in ['skip', 'done', 'del']:
-				return score
-			weighted_score = score * urgency_weights[i]
-			urgency_scores.append(weighted_score)
-
-		# Effort Estimation
-		print(Fore.RED + "\nAssessing Effort:")
-		effort_question = Fore.YELLOW + "Effort Required: Estimate the effort required to complete this task (time, resources, complexity).\n0 - No effort.\n1 - Minimal effort.\n2 - Low effort.\n3 - Moderate effort.\n4 - High effort.\n5 - Extreme effort.\n"
-		effort = ask_question(effort_question)
-		if effort in ['skip', 'done', 'del']:
-			return effort
+	def ask_questions(task_name="Task"):
+		"""
+		Calculate task priority based on multiple factors and return normalized value.
 		
-		# Effort weight (adjusted for high performance)
-		effort_weight = 0.5  # Lessens the impact of effort on the final value
-		adjusted_effort = (effort * effort_weight) + 1  # +1 to avoid division by zero
-
-
-		# Adjusting the scoring mechanism
-		max_importance_score = 5 * sum(importance_weights)
-		max_urgency_score = 5 * sum(urgency_weights)
-
-		total_importance = sum(importance_scores)
-		total_urgency = sum(urgency_scores)
-
-		# Normalizing the scores to a 0-100 scale
-		normalized_importance = (total_importance / max_importance_score) * 100
-		normalized_urgency = (total_urgency / max_urgency_score) * 100
-
-		# Calculating the task value incorporating effort
-		value = (normalized_importance * normalized_urgency) / adjusted_effort
-
-		return value
+		Args:
+			task_name (str): Name of the task being evaluated
+			
+		Returns:
+			float: Normalized priority value between 0-100
+		"""
+		console = Console()
+		
+		# Dimension definitions with their questions and options
+		dimensions = {
+			"Importance": {
+				"question": "How important is this task to achieving your goals?",
+				"options": [
+					("Critical to core goals/mission", 5),
+					("Very important strategic objective", 4),
+					("Supports important goals", 3),
+					("Nice to have, but not essential", 2),
+					("Minimal impact on goals", 1),
+					("No relevance to goals", 0)
+				],
+				"weight": 5
+			},
+			"Urgency": {
+				"question": "How soon does this task need to be completed?",
+				"options": [
+					("Must be done immediately/today", 5),
+					("Needed this week", 4),
+					("Needed this month", 3),
+					("Needed this quarter", 2),
+					("Needed this year", 1),
+					("No time pressure", 0)
+				],
+				"weight": 4
+			},
+			"Consequences": {
+				"question": "What are the consequences if this task is not completed?",
+				"options": [
+					("Severe negative impact if not done", 5),
+					("Major problems will arise", 4),
+					("Moderate issues will occur", 3),
+					("Minor inconveniences", 2),
+					("Very little impact", 1),
+					("No consequences", 0)
+				],
+				"weight": 4
+			},
+			"Uncertainty": {
+				"question": "How clear are the requirements and expected outcomes?",
+				"options": [
+					("Complete lack of clarity", 5),
+					("Major unknowns present", 4),
+					("Several unclear aspects", 3),
+					("Minor uncertainties", 2),
+					("Mostly clear path", 1),
+					("Crystal clear requirements", 0)
+				],
+				"weight": 2
+			},
+			"Effort": {
+				"question": "How much effort (time/resources) will this task require?",
+				"options": [
+					("Massive project (months)", 5),
+					("Large project (weeks)", 4),
+					("Medium project (days)", 3),
+					("Small task (hours)", 2),
+					("Quick task (< 1 hour)", 1),
+					("Minimal effort (minutes)", 0)
+				],
+				"weight": 3
+			}
+		}
+		
+		def display_options(dimension_name, dimension_data):
+			table = Table(show_header=False, box=box.SIMPLE, show_edge=False, pad_edge=False, style="dim")
+			colors = ["red", "orange3", "yellow", "green", "blue", "purple"]
+			
+			for (description, value), color in zip(dimension_data["options"], colors):
+				table.add_row(
+					f"[bold {color}]{value}[/bold {color}]",
+					"-",
+					description
+				)
+			
+			return Panel(
+				table,
+				title=f"[bold]{dimension_name}[/bold]",
+				title_align="left",
+				subtitle=dimension_data["question"],
+				box=box.ROUNDED
+			)
+		
+		def get_score(dimension_name, dimension_data):
+			console.print()
+			console.print(display_options(dimension_name, dimension_data))
+			
+			while True:
+				try:
+					value = IntPrompt.ask("[bold cyan]Enter rating[/bold cyan]")
+					if 0 <= value <= 5:
+						selected_description = next(desc for desc, val in dimension_data["options"] if val == value)
+						console.print(f"[dim]Selected: {selected_description}[/dim]")
+						return value
+					console.print("[bold red]Please enter a value between 0 and 5[/bold red]")
+				except ValueError:
+					console.print("[bold red]Please enter a valid number[/bold red]")
+		
+		# Display header
+		console.print(
+			Panel(
+				"[bold cyan]Task Prioritization System[/bold cyan]\n"
+				"[dim]Evaluate your task across 5 key dimensions to determine its priority[/dim]",
+				box=box.ROUNDED,
+				style="blue",
+			)
+		)
+		
+		# Collect scores
+		scores = {}
+		for dimension_name, dimension_data in dimensions.items():
+			scores[dimension_name] = get_score(dimension_name, dimension_data)
+		
+		# Calculate value
+		base_value = sum(
+			scores[dim] * data["weight"]
+			for dim, data in dimensions.items()
+			if dim in ["Importance", "Urgency", "Consequences"]
+		)
+		
+		uncertainty_factor = 1 - (scores["Uncertainty"] * 0.1)
+		effort_factor = 1 + (scores["Effort"] * 0.5)
+		
+		max_possible_value = sum(
+			5 * data["weight"]
+			for dim, data in dimensions.items()
+			if dim in ["Importance", "Urgency", "Consequences"]
+		)
+		
+		final_value = (base_value * uncertainty_factor / effort_factor)
+		normalized_value = round((final_value / max_possible_value) * 100, 2)
+		
+		# Display results
+		priority_level = "HIGH" if normalized_value >= 70 else "MEDIUM" if normalized_value >= 40 else "LOW"
+		priority_color = "bold red" if normalized_value >= 70 else "bold yellow" if normalized_value >= 40 else "bold blue"
+		
+		result_table = Table(box=box.ROUNDED, show_header=False)
+		result_table.add_column("Metric", style="cyan")
+		result_table.add_column("Value", style="white")
+		
+		for dimension_name, score in scores.items():
+			selected_description = next(desc for desc, val in dimensions[dimension_name]["options"] if val == score)
+			result_table.add_row(
+				dimension_name,
+				f"[bold]{score}[/bold] - {selected_description}"
+			)
+		
+		result_table.add_row("Final Score", f"[bold]{normalized_value}$$$[/bold]")
+		result_table.add_row(
+			"Priority Level",
+			f"[{priority_color}]{priority_level}[/{priority_color}]"
+		)
+		
+		console.print()
+		console.print(Panel(
+			result_table,
+			title=f"[bold cyan]Results for {task_name}[/bold cyan]",
+			box=box.ROUNDED
+		))
+		
+		return normalized_value
 
 	def eisenhower():
 		try:
@@ -3111,7 +3181,20 @@ try:
 					print(delimiter)
 					display_task_details(task['uuid'])
 					print(Fore.CYAN + f"\nProcessing task: {task['description']}")
+
+					# --- Check value ---
+					if task.get('value', 0) > 0:
+						print(Fore.YELLOW + f"Task has a value of {task['value']}. Do you still want to process this task? (y/n)")
+						user_input = input(">> ").strip().lower()
+						if user_input != 'y':
+							# If the user did not confirm 'yes', skip this task
+							print(Fore.BLUE + "Skipping this task due to its value.")
+							continue
+					# -------------------
+
+					# Ask user how to handle the task
 					response = ask_questions()
+
 					if response in ['skip', 'done', 'del']:
 						if response == 'skip':
 							print(Fore.BLUE + "Skipping task.")
@@ -3124,9 +3207,9 @@ try:
 						continue
 
 					value = response
-					if value >= 2500:
+					if value >= 70:
 						priority = 'H'  # High Priority
-					elif value >= 700:
+					elif value >= 40:
 						priority = 'M'  # Medium Priority
 					else:
 						priority = 'L'  # Low Priority
@@ -3536,18 +3619,37 @@ try:
 			return item_name  # Use the new name entered by the user
 
 	def display_task_details(task_uuid):
+		"""Display a task's details in a Rich-styled table."""
+		# Create a Rich Console instance
+		console = Console()
+
+		# Retrieve the task details from Taskwarrior
 		command = f"task {task_uuid} export"
 		output = run_taskwarrior_command(command)
+
 		if output:
 			task_details = json.loads(output)
 			if task_details:
-				task = task_details[0]  # Assuming the first item is the task we want
+				# Get the first task (assuming single task is returned)
+				task = task_details[0]
+
+				# Create a table with a title
+				table = Table(title=f"Task Details for {task_uuid}", show_lines=True)
+
+				# Add two columns to our table
+				table.add_column("Field", style="bold cyan", justify="left")
+				table.add_column("Value", style="bold white", justify="left")
+
+				# Populate the rows with key-value pairs from the task
 				for key, value in task.items():
-					print(f"{key}: {value}")
+					table.add_row(str(key), str(value))
+
+				# Print the table to the console
+				console.print(table)
 			else:
-				print(Fore.RED + "No task details found.")
+				console.print("[red]No task details found.[/red]")
 		else:
-			print(Fore.RED + "Failed to retrieve task details.")
+			console.print("[red]Failed to retrieve task details.[/red]")
 
 	def add_new_task_to_project(project_name):
 		while True:
@@ -3666,7 +3768,6 @@ try:
 						delta_created = datetime.now(timezone.utc) - created_date
 						delta_created_str = f"{delta_created.days} days, {delta_created.seconds // 3600} hours ago"
 					except ValueError:
-						# If parsing fails, we’ll just store the raw string
 						created_date = task['entry']
 
 				due_date_str = task.get('due')
@@ -3745,7 +3846,7 @@ try:
 							priority_level, # 7
 							priority_color, # 8
 							value,          # 9
-							created_date,   # 10 (might be datetime or raw string)
+							created_date,   # 10
 							delta_created_str  # 11
 						)
 					)
@@ -3763,7 +3864,6 @@ try:
 						task_count += sub_count
 
 				return total_value, total_duration, task_count
-
 
 			def create_task_details(task_info):
 				"""Create a Panel containing all task details"""
@@ -3812,6 +3912,8 @@ try:
 								border_style="grey50",
 								style="grey74")
 
+
+
 			tree = Tree("Task Overview", style="bold blue", guide_style="grey50")
 			
 			for project, tags in project_tag_map.items():
@@ -3853,6 +3955,20 @@ try:
 					
 					current_branch = found_branch
 
+				# Add project metadata
+				metadata = None
+				project_hierarchy = project.split('.')
+				for j in range(len(project_hierarchy), 0, -1):
+					partial_project = '.'.join(project_hierarchy[:j])
+					metadata = project_metadata.get(partial_project)
+					if metadata and any(metadata.values()):
+						break
+					else:
+						metadata = None
+
+				if metadata:
+					add_project_metadata_to_tree_2(metadata, current_branch)
+
 				# Add tags and tasks with simplified display
 				for tag, tasks in tags.items():
 					if not tasks:
@@ -3882,7 +3998,6 @@ try:
 						task_branch.add(details_panel, guide_style="grey50")
 
 			console.print(tree)
-
 
 			
 	def parse_datetime(date_string):
