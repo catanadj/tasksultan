@@ -1279,6 +1279,7 @@ try:
             table.add_row("DT", "Display dependency tree")
             table.add_row("SD", "Set dependencies")
             table.add_row("RD", "Remove dependencies")
+            table.add_row("DE", "Show Details")
             table.add_row("SP", "Search another project")
             table.add_row("MP", "Display multiple projects")
             table.add_row("MA", "Main menu")
@@ -1321,6 +1322,8 @@ try:
                 dependency_input = ""
                 manual_sort_dependencies(dependency_input)
                 dependency_tree(item_name)
+            elif choice == 'DE':
+                display_tasks(f"task project:{item_name} +PENDING export",show_details=True)
             elif choice == 'RD':
                 task_ids_input = console.input("Enter the IDs of the tasks to remove dependencies (comma-separated):\n")
                 remove_task_dependencies(task_ids_input)
@@ -3736,7 +3739,9 @@ try:
             f"Hours: {metrics['total_duration']:.1f}"
         )
 
-    def display_tasks(command):
+
+
+    def display_tasks(command, show_details=False):
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
         console = Console()
         if result.stdout:
@@ -3854,67 +3859,90 @@ try:
                 total_value = sum(project_values[project_name])
                 total_duration = sum(project_durations[project_name])
                 task_count = len(project_values[project_name])
-
                 for other_project in project_values.keys():
                     if other_project.startswith(project_name + '.'):
                         sub_value, sub_duration, sub_count = get_project_totals(other_project)
                         total_value += sub_value
                         total_duration += sub_duration
                         task_count += sub_count
-
                 return total_value, total_duration, task_count
 
+
             def create_task_details(task_info):
-                """Create a Panel containing all task details"""
+                """Create a Panel containing color-coded task details, sized to fit content"""
                 (task_id, description, due_date, annotations, delta_text, due_color, 
                 duration, priority_level, priority_color, value, created_date, 
                 delta_created_str) = task_info
                 
                 details = []
                 
-                # Priority, Value, Duration
-                info_line = []
+                # Priority, Value, Duration with distinct colors
+                info_parts = []
                 if priority_level:
-                    info_line.append(f"Priority: {priority_level}")
+                    priority_style = priority_color if priority_color else "bold red"
+                    info_parts.append(Text(f"Priority: {priority_level}", style=priority_style))
                 if value:
-                    info_line.append(f"Value: {value}")
+                    info_parts.append(Text(f"Value: {value}", style="green"))
                 if duration:
-                    info_line.append(f"Duration: {duration}")
-                if info_line:
-                    details.append(Text(" | ".join(info_line), 
-                                    style="cyan3" if not priority_color else priority_color))
+                    info_parts.append(Text(f"Duration: {duration}", style="magenta"))
+                
+                if info_parts:
+                    # Join parts with separator
+                    combined = Text("")
+                    for i, part in enumerate(info_parts):
+                        if i > 0:
+                            combined.append(" | ", style="dim")
+                        combined.append(part)
+                    details.append(combined)
                 
                 # Due Date
                 if due_date:
                     formatted_due = due_date.strftime("%Y-%m-%d")
-                    details.append(Text(f"Due: {formatted_due} ({delta_text})", style=due_color))
+                    combined_due = Text("")
+                    combined_due.append("Due: ", style="yellow")
+                    combined_due.append(formatted_due, style=due_color if due_color else "yellow")
+                    combined_due.append(f" ({delta_text})", style="yellow dim")
+                    details.append(combined_due)
                 
                 # Creation Date
                 if created_date:
+                    combined_created = Text("")
+                    combined_created.append("Added: ", style="blue")
                     if isinstance(created_date, datetime):
                         created_str = created_date.strftime('%Y-%m-%d %H:%M:%S')
-                        details.append(Text(f"Added: {created_str} ({delta_created_str})", 
-                                        style="steel_blue"))
+                        combined_created.append(created_str, style="blue")
+                        combined_created.append(f" ({delta_created_str})", style="blue dim")
                     else:
-                        details.append(Text(f"Added: {created_date}", style="steel_blue"))
+                        combined_created.append(str(created_date), style="blue")
+                    details.append(combined_created)
                 
                 # Annotations
                 if annotations:
-                    details.append(Text("Annotations:", style="italic cornflower_blue"))
+                    details.append(Text("\nAnnotations:", style="cyan bold"))
                     for annotation in annotations:
-                        entry_datetime = datetime.strptime(annotation['entry'], "%Y%m%dT%H%M%SZ").strftime('%Y-%m-%d %H:%M:%S')
-                        details.append(Text(f"  {entry_datetime} - {annotation['description']}", 
-                                        style="grey69"))
+                        entry_datetime = datetime.strptime(
+                            annotation['entry'], 
+                            "%Y%m%dT%H%M%SZ"
+                        ).strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        combined_annotation = Text("")
+                        combined_annotation.append("  • ", style="cyan")
+                        combined_annotation.append(entry_datetime, style="cyan")
+                        combined_annotation.append(f" - {annotation['description']}", style="cyan dim")
+                        details.append(combined_annotation)
                 
-                return Panel.fit("\n".join(str(detail) for detail in details), 
-                                title="Task Details",
-                                border_style="grey50",
-                                style="grey74")
+                # Join all details with newlines
+                final_text = Text("\n").join(details)
+                
+                return Panel.fit(
+                    final_text,
+                    border_style="blue",
+                    padding=(1, 2)
+                )
 
 
+            tree = Tree("Task Overview", style="blue", guide_style="grey50")
 
-            tree = Tree("Task Overview", style="bold blue", guide_style="grey50")
-            
             for project, tags in project_tag_map.items():
                 if project == 'No Project' and not any(tags.values()):
                     continue
@@ -3923,38 +3951,36 @@ try:
                 project_levels = project.split(".")
                 current_branch = tree
                 current_path = []
-                
+
                 for i, level in enumerate(project_levels):
                     current_path.append(level)
                     current_project = '.'.join(current_path)
-                    
-                    # Calculate project metrics
-                    total_value, total_duration, task_count = get_project_totals(current_project)
-                    
-                    # Create compact metrics display
-                    metrics_summary = f"[grey70]({task_count} tasks"
-                    if total_value > 0:
-                        metrics_summary += f" | ${total_value:,.0f}"
-                    if total_duration > 0:
-                        metrics_summary += f" | {total_duration:.1f}h"
-                    metrics_summary += ")[/grey70]"
-                    
-                    # Add project branch with inline metrics
+                    # Only calculate and include project metrics if show_details is True.
+                    if show_details:
+                        total_value, total_duration, task_count = get_project_totals(current_project)
+                        metrics_summary = f"[grey70]({task_count} tasks"
+                        if total_value > 0:
+                            metrics_summary += f" | ${total_value:,.0f}"
+                        if total_duration > 0:
+                            metrics_summary += f" | {total_duration:.1f}h"
+                        metrics_summary += ")[/grey70]"
+                        branch_label = f"[cyan1]{level}[/cyan1] {metrics_summary}"
+                    else:
+                        branch_label = f"[cyan1]{level}[/cyan1]"
+
+                    # Add project branch with inline metrics (if applicable)
                     found_branch = None
                     for child in current_branch.children:
                         if child.label.plain.startswith(level):
                             found_branch = child
                             break
-                            
+
                     if not found_branch:
                         guide_style = guide_styles[i % len(guide_styles)]
-                        branch_label = f"[cyan1]{level}[/cyan1] {metrics_summary}"
-                        found_branch = current_branch.add(Text.from_markup(branch_label), 
-                                                        guide_style="grey50")
-                    
+                        found_branch = current_branch.add(Text.from_markup(branch_label), guide_style="grey50")
                     current_branch = found_branch
 
-                # Add project metadata
+                # Add project metadata (unchanged; adjust as needed)
                 metadata = None
                 project_hierarchy = project.split('.')
                 for j in range(len(project_hierarchy), 0, -1):
@@ -3964,7 +3990,6 @@ try:
                         break
                     else:
                         metadata = None
-
                 if metadata:
                     add_project_metadata_to_tree_2(metadata, current_branch)
 
@@ -3972,16 +3997,15 @@ try:
                 for tag, tasks in tags.items():
                     if not tasks:
                         continue
-                        
-                    tag_branch = current_branch.add(Text(f"{tag}"), 
-                                                guide_style="yellow")
-                    
+
+                    tag_branch = current_branch.add(Text(f"{tag}"), guide_style="yellow")
+
                     # Sort tasks by due date
                     for task_info in sorted(tasks, key=lambda x: (x[2] is None, x[2])):
                         task_id, description, due_date, *_ = task_info
-                        
+
                         # Create compact task display with white description
-                        task_line = f"[indian_red]{task_id}[/indian_red] [white]{description}[/white]"
+                        task_line = f"[red][{task_id}][/red] [white bold]{description}[/white bold]"
                         if due_date:
                             days_until = (due_date - now).days
                             if days_until < 0:
@@ -3990,13 +4014,16 @@ try:
                                 task_line += " [yellow](Due today)[/yellow]"
                             elif days_until <= 7:
                                 task_line += f" [yellow]({days_until}d left)[/yellow]"
-                        
-                        # Add expandable details using a Panel
+
+                        # Add task branch (summary always displayed)
                         task_branch = tag_branch.add(Text.from_markup(task_line))
-                        details_panel = create_task_details(task_info)
-                        task_branch.add(details_panel, guide_style="grey50")
+                        # Only add full details if the extra flag was given
+                        if show_details:
+                            details_panel = create_task_details(task_info)
+                            task_branch.add(details_panel, guide_style="grey50")
 
             console.print(tree)
+
 
             
     def parse_datetime(date_string):
