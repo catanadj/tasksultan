@@ -3758,6 +3758,7 @@ try:
         project_tag_map = defaultdict(lambda: defaultdict(list))
         project_values = defaultdict(list)
         project_durations = defaultdict(list)
+        tag_values = defaultdict(float)  # New dictionary to store sum of values for each tag
         now = datetime.now(timezone.utc).astimezone()
 
         # Precompute reusable values
@@ -3797,6 +3798,10 @@ try:
                 project_values[project].append(value)
             except ValueError:
                 value = 0
+
+            # Accumulate the value for each tag
+            for tag in tags:
+                tag_values[tag] += value
 
             # Priority level determination
             original_priority = task.get('priority')
@@ -3882,7 +3887,11 @@ try:
                 details.append(Text("\nAnnotations:", style="cyan bold"))
                 for annotation in annotations:
                     entry_datetime = datetime.strptime(annotation['entry'], "%Y%m%dT%H%M%SZ").strftime('%Y-%m-%d %H:%M:%S')
-                    details.append(Text(f"  • {entry_datetime} - {annotation['description']}", style="cyan dim"))
+                    # Split the entry time and description into separate Text objects with different styles
+                    entry_text = Text(f"  • {entry_datetime} - ", style="yellow")
+                    description_text = Text(annotation['description'], style="white")
+                    # Combine the two Text objects
+                    details.append(entry_text + description_text)
 
             return Panel.fit(Text("\n").join(details), border_style="blue", padding=(1, 2))
 
@@ -3933,7 +3942,11 @@ try:
                 if not tasks:
                     continue
 
-                tag_branch = current_branch.add(Text(f"{tag}"), guide_style="yellow")
+                # Add the sum of values for the tag to the tag label
+                tag_value = tag_values[tag]
+                tag_label = f"{tag} [green](${tag_value:,.0f})[/green]" if tag_value > 0 else tag
+                tag_branch = current_branch.add(Text.from_markup(tag_label), guide_style="yellow")
+
                 for task_info in sorted(tasks, key=lambda x: (x[2] is None, x[2])):
                     task_id, description, due_date, *_ = task_info
                     task_line = f"[red][{task_id}][/red] [white bold]{description}[/white bold]"
@@ -5472,6 +5485,7 @@ try:
 # x_x
     def update_metadata_field(item_name, field_to_update):
         console = Console()
+        
         # Load from SultanDB
         script_directory = os.path.dirname(os.path.abspath(__file__))
         file_path = os.path.join(script_directory, "sultandb.json")
@@ -5500,7 +5514,10 @@ try:
         # Proceed to update the metadata field
         if field_to_update == 'description':
             # Update Description
-            new_description = console.input("Enter new description: ")
+            new_description = questionary.text(
+                "Enter new description:",
+                default=selected_item.get('description', '')
+            ).ask()
             selected_item['description'] = new_description
             console.print("Description updated.", style="bold green")
         elif field_to_update == 'standard_or_outcome':
@@ -5509,13 +5526,16 @@ try:
                 field_name = "standard"
             else:
                 field_name = "outcome"
-            new_value = console.input(f"Enter new {field_name}: ")
+            new_value = questionary.text(
+                f"Enter new {field_name}:",
+                default=selected_item.get(field_name, '')
+            ).ask()
             selected_item[field_name] = new_value
             console.print(f"{field_name.capitalize()} updated.", style="bold green")
         elif field_to_update == 'annotations':
             # Add Annotation
             timestamp = datetime.now().isoformat()
-            content = console.input("Enter annotation content: ")
+            content = questionary.text("Enter annotation content:").ask()
             annotation = {'timestamp': timestamp, 'content': content}
             if 'annotations' not in selected_item:
                 selected_item['annotations'] = []
@@ -5524,7 +5544,7 @@ try:
         elif field_to_update == 'workLogs':
             # Add Work Log
             timestamp = datetime.now().isoformat()
-            content = console.input("Enter work log content: ")
+            content = questionary.text("Enter work log content:").ask()
             work_log = {'timestamp': timestamp, 'content': content}
             if 'workLogs' not in selected_item:
                 selected_item['workLogs'] = []
@@ -5552,7 +5572,6 @@ try:
         # Save to file
         save_sultandb(file_path, aors, projects)
         console.print("Changes saved to SultanDB.", style="bold green")
-
 
 
 
