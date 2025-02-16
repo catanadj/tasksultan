@@ -4922,7 +4922,7 @@ try:
 
                 for task_info in sorted(tasks, key=lambda x: (x[2] is None, x[2])):
                     task_id, description, due_date, *_ = task_info
-                    task_line = f"[medium_spring_green][{task_id}][/medium_spring_green] [white bold]{description}[/white bold]"
+                    task_line = f"[red][[/red][medium_spring_green]{task_id}[/medium_spring_green][red]][/red] [white bold]{description}[/white bold]"
                     if due_date:
                         days_until = (due_date - now).days
                         if days_until < 0:
