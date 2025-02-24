@@ -33,6 +33,7 @@ from rich.table import Table
 # from rich import print as rprint
 from rich.panel import Panel
 from rich.text import Text
+from rich.console import Group
 from rich import box
 import re
 from enum import Enum
@@ -1665,6 +1666,7 @@ try:
             table.add_row("AN", "Annotate task")
             table.add_row("TD", "Mark task as completed")
             table.add_row("DD", "Assign due date")
+            table.add_row("PV", "Process Value/Priority")
             table.add_row("", "")  # Separator
 
             # Exit option
@@ -1739,6 +1741,8 @@ try:
                 due_date = console.input("Enter the due date (YYYY-MM-DD): ")
                 command = f"task {task_id} modify due:{due_date}"
                 execute_task_command(command)
+            elif choice == "PV":
+                eisenhower(f"project:{item_name}")
             elif choice == "":
                 console.print("Exiting project management.")
                 break
@@ -3724,7 +3728,7 @@ try:
             return []
 
 
-
+    # You need to adjust the weights according 
     dimensions = {
         "Importance": {
             "question": "How important is this task to achieving your goals?",
@@ -3760,7 +3764,7 @@ try:
                 ("Very little impact", 1),
                 ("No consequences", 0),
             ],
-            "weight": 4,
+            "weight": 5,
         },
         "Uncertainty": {
             "question": "How clear are the requirements and expected outcomes?",
@@ -3772,7 +3776,7 @@ try:
                 ("Mostly clear path", 1),
                 ("Crystal clear requirements", 0),
             ],
-            "weight": 2,
+            "weight": 3,
         },
         "Effort": {
             "question": "How much effort (time/resources) will this task require?",
@@ -3784,7 +3788,7 @@ try:
                 ("Quick task (< 1 hour)", 1),
                 ("Minimal effort (minutes)", 0),
             ],
-            "weight": 3,
+            "weight": 5,
         },
     }
 
@@ -3798,10 +3802,10 @@ try:
             style="dim",
             padding=(0, 2),  # Add padding for better spacing
         )
-
+        
         # Define a list of colors for the options
         colors = ["red", "orange3", "yellow", "green", "blue", "purple"]
-
+        
         # Add rows to the table with colored values and descriptions
         for (description, value), color in zip(dimension_data["options"], colors):
             table.add_row(
@@ -3809,19 +3813,27 @@ try:
                 "—",  # Use an em dash for a cleaner separator
                 description,
             )
-
-        # Create a panel with the table, adjusting the width to fit the content
-        return Panel(
+        
+        # Calculate the maximum width needed for options
+        max_option_width = max(len(desc) for desc, _ in dimension_data["options"])
+        needed_width = max(80, max_option_width + 15)
+        
+        # Create a panel with just the table and title
+        panel = Panel(
             table,
             title=f"[bold]{dimension_name}[/bold]",
             title_align="left",
-            subtitle=dimension_data["question"],
             box=box.ROUNDED,
             expand=False,  # Ensure the panel does not expand to terminal width
-            width=None,    # Let the panel adjust its width to the content
+            width=needed_width,  # Set explicit width based on content
             padding=(1, 2),  # Add padding around the panel content
             style="dim",  # Apply a subtle style to the panel
         )
+        
+        question_text = Text(f"\n{dimension_data['question']}", style="italic")
+        result = Group(panel, question_text)
+        
+        return result
 
     def get_score(dimension_name, dimension_data):
         console.print()
@@ -3917,7 +3929,7 @@ try:
         )
         return fork
 
-    def eisenhower():
+    def eisenhower(custom_filter=None):
         try:
             # Define filter options
             filter_options = {
@@ -3926,14 +3938,27 @@ try:
                 "3": ("Due Tomorrow", "due:tomorrow"),
             }
 
-            # Get the filter choice from the user
-            filter_query = get_filter_choice(filter_options)
+            # If a custom filter is provided as an argument, use it directly
+            if custom_filter:
+                filter_query = custom_filter
+                console.print(f"[bold green]Using provided filter:[/bold green] [dim]{filter_query}[/dim]")
+            else:
+                # Otherwise, get the filter choice from the user
+                filter_query = get_filter_choice(filter_options)
 
             # Get the fork choice from the user
             fork = get_fork_choice()
 
             if fork == "i":
                 tasks = get_tasks(filter_query)
+                
+                # Print summary of how many tasks are in the selected filter
+                task_count = len(tasks)
+                if task_count == 0:
+                    console.print(f"[bold yellow]No tasks found matching the filter:[/bold yellow] [dim]{filter_query}[/dim]")
+                else:
+                    console.print(f"[bold green]Found {task_count} task{'s' if task_count != 1 else ''} matching the filter:[/bold green] [dim]{filter_query}[/dim]")
+                
 
 
                 for task in tasks:
@@ -4044,7 +4069,7 @@ try:
                         # 4. **Final Value**:
                             
                         #     - 52×0.8/2.5=16.64
-                                
+                                 
                         # 5. **Max Possible Value**:
                             
                         #     - Importance: 5×5=25
@@ -4059,7 +4084,7 @@ try:
                             
                         #     - (16.64/65)×100=25.6
 
-                        
+
                       # Determine priority level
                         priority_level = (
                             "HIGH"
@@ -4196,20 +4221,6 @@ try:
                     + "Invalid input. Please enter a number between 1 and 4, 'skip', 'done', or 'del'."
                 )
 
-    # def display_task_details(task_uuid):
-    # 	command = f"task {task_uuid} export"
-    # 	output = run_taskwarrior_command(command)
-    # 	if output:
-    # 		task_details = json.loads(output)
-    # 		if task_details:
-    # 			task = task_details[0]  # Assuming the first item is the task we want
-    # 			for key, value in task.items():
-    # 				print(f"{key}: {value}")
-    # 		else:
-    # 			print(Fore.RED + "No task details found.")
-    # 	else:
-    # 		print(Fore.RED + "Failed to retrieve task details.")
-
     # =========================================================
 
     def short_uuid(uuid):
@@ -4336,6 +4347,7 @@ try:
                 table.add_row("DT", "View Dependency Tree")
                 table.add_row("AN", "Annotate task")
                 table.add_row("DD", "Assign due date")
+                table.add_row("PV", "Process Value/Priority")
                 table.add_row("TD", "Mark task as completed")
                 table.add_row("NP", "Next project")
                 table.add_row("SP", "Save progress and exit")
@@ -4372,6 +4384,8 @@ try:
                     if task_ID:
                         due_date = console.input("[cyan]Enter the due date: ")
                         subprocess.run(["task", task_ID, "modify", f"due:{due_date}"])
+                elif choice.lower() == "pv":
+                    eisenhower(f"project:{project} project.not:{project}.")
                 elif choice.lower() == "np":
                     break  # Move to the next project
                 elif choice.lower() == "r":
@@ -4615,7 +4629,7 @@ try:
             return item_name  # Use the new name entered by the user
 
     def display_task_details(task_uuid):
-        """Display a task's details in a Rich-styled tree structure."""
+        """Display a task's details in a Rich-styled tree structure with time deltas for dates."""
         console = Console()
 
         # Retrieve the task details from Taskwarrior
@@ -4639,8 +4653,56 @@ try:
             guide_style="cyan"
         )
 
+        # Helper function to format date values with delta time
+        def format_date_with_delta(date_str, date_type):
+            from datetime import datetime
+            import dateutil.parser
+            
+            # Make sure we're using timezone-aware datetime objects
+            date_obj = dateutil.parser.parse(date_str)
+            
+            # If the date is timezone-aware, make sure now is also timezone-aware
+            if date_obj.tzinfo is not None:
+                from datetime import timezone
+                now = datetime.now(timezone.utc)
+            else:
+                now = datetime.now()
+            
+            # Calculate delta
+            delta = date_obj - now if date_type in ["due", "scheduled", "until"] else now - date_obj
+            
+            # Format delta in a human-readable way
+            if abs(delta.days) > 365:
+                years = abs(delta.days) // 365
+                delta_str = f"{years} year{'s' if years != 1 else ''}"
+            elif abs(delta.days) > 30:
+                months = abs(delta.days) // 30
+                delta_str = f"{months} month{'s' if months != 1 else ''}"
+            elif abs(delta.days) > 0:
+                delta_str = f"{abs(delta.days)} day{'s' if abs(delta.days) != 1 else ''}"
+            elif abs(delta.seconds) >= 3600:
+                hours = abs(delta.seconds) // 3600
+                delta_str = f"{hours} hour{'s' if hours != 1 else ''}"
+            else:
+                minutes = (abs(delta.seconds) // 60) or 1  # At least 1 minute
+                delta_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+            
+            # Different prefix depending on if it's in the past or future
+            if date_type in ["due", "scheduled", "until"]:
+                if delta.total_seconds() > 0:
+                    prefix = "in"  # Future
+                else:
+                    prefix = "overdue by"  # Past
+            else:
+                if delta.total_seconds() > 0:
+                    prefix = "ago"  # Past
+                else:
+                    prefix = "in"  # Future (shouldn't happen for entry/modified)
+                    
+            return f"{date_str} ({prefix} {delta_str})"
+
         # Helper function to format values appropriately
-        def format_value(value):
+        def format_value(field, value):
             if isinstance(value, bool):
                 return "✓" if value else "✗"
             elif isinstance(value, (int, float)):
@@ -4651,6 +4713,11 @@ try:
                 return ", ".join(map(str, value))
             elif value is None:
                 return "—"
+            elif field in ["entry", "modified", "due", "scheduled", "until"]:
+                try:
+                    return format_date_with_delta(str(value), field)
+                except (ValueError, TypeError) as e:
+                    return f"{value} (error calculating delta: {str(e)})"
             return str(value)
 
         # Group related fields
@@ -4659,7 +4726,7 @@ try:
             "Dates": ["entry", "modified", "due", "scheduled", "until"],
             "Tags and Dependencies": ["tags", "depends"],
             "Task Status": ["waiting", "recur", "parent"],
-            "Metadata": ["uuid", "urgency", "modified", "id"]
+            "Metadata": ["uuid", "urgency", "id"]
         }
 
         # Create branches for each group
@@ -4670,12 +4737,12 @@ try:
                 group_branch = main_tree.add(Text(group_name, style="bold yellow"))
                 
                 for field in existing_fields:
-                    value = format_value(task[field])
+                    value = format_value(field, task[field])
                     # Style based on field type
                     if field in ["due", "scheduled"] and task.get(field):
                         style = "red" if field == "due" else "green"
                     elif field == "priority":
-                        style = {"H": "red", "M": "yellow", "L": "blue"}.get(value, "white")
+                        style = {"H": "red", "M": "yellow", "L": "blue"}.get(str(task[field]), "white")
                     else:
                         style = "white"
                     
@@ -4690,14 +4757,14 @@ try:
         if remaining_fields:
             other_branch = main_tree.add(Text("Other Fields", style="bold yellow"))
             for field in remaining_fields:
-                value = format_value(task[field])
+                value = format_value(field, task[field])
                 field_text = Text(f"{field}: ", style="blue")
                 field_text.append(value, style="white")
                 other_branch.add(field_text)
 
         # Print the tree
         console.print(main_tree)
-
+        
     def add_new_task_to_project(project_name):
         while True:
             new_task_description = input(
