@@ -24,7 +24,7 @@ import calendar
 from datetime import date
 
 # import texttable as tt
-# import pandas as pd
+import pandas as pd
 from fuzzywuzzy import process
 from rich.console import Console
 from rich.prompt import Prompt, Confirm
@@ -704,12 +704,11 @@ try:
             )
         else:
             print(
-                f"\n\t\033[1m{len(due_tasks)} pending tasks out of {len(due_tasks)+len(completed_tasks)} total. {len(completed_tasks)} completed and {len(deleted_tasks)} deleted!"
+                f"\n\t\033[1m{len(due_tasks)} pending tasks out of {len(due_tasks) + len(completed_tasks)} total. {len(completed_tasks)} completed and {len(deleted_tasks)} deleted!"
             )
 
         print_calendar_with_marked_day(date.year, date.month, date.day)
         while True:
-
             action = questionary.select(
                 "What do you want to do next?", choices=["Refresh", "Exit"]
             ).ask()
@@ -724,7 +723,6 @@ try:
                 break
 
     def search_task():
-
         tasks = warrior.load_tasks()
 
         include_completed = questionary.confirm(
@@ -774,7 +772,6 @@ try:
             print("No task found with that description.")
 
     def display_inbox_tasks():
-
         tasks = warrior.load_tasks()["pending"]
         delimiter = "-" * 40
         # Filter tasks with the tag "in"
@@ -821,7 +818,6 @@ try:
                 subprocess.run(f"task {task_command}", shell=True)
 
     def display_due_tasks():
-
         tasks = warrior.load_tasks()
 
         include_recurrent = questionary.confirm(
@@ -976,7 +972,6 @@ try:
                 item["status"] = "Completed"
 
     def get_creation_date(item_name):
-
         tasks = warrior.load_tasks()
         for task in tasks["pending"]:
             project = task.get("project")
@@ -991,7 +986,6 @@ try:
         return None
 
     def get_last_modified_date(item_name):
-
         tasks = warrior.load_tasks()
         last_modified = None
         for task in tasks["pending"]:
@@ -1008,7 +1002,6 @@ try:
         return last_modified
 
     def get_tags_for_item(item_name):
-
         tasks = warrior.load_tasks()
         tags = {}
         for task in tasks["pending"]:
@@ -1341,7 +1334,7 @@ try:
     from prompt_toolkit.application import get_app
     from prompt_toolkit.filters import Condition
     from prompt_toolkit.shortcuts import prompt
-    from prompt_toolkit.shortcuts.prompt import CompleteStyle
+    # from prompt_toolkit.shortcuts.prompt import CompleteStyle
     from prompt_toolkit.formatted_text import HTML
     from prompt_toolkit.styles import Style
     import inquirer
@@ -1472,7 +1465,7 @@ try:
         return output_lines  # Return the list of all processed projects
 
     def dependency_tree(selected_item):
-        from rich import print
+        # from rich import print
         from rich.tree import Tree
         from rich.text import Text
 
@@ -2915,7 +2908,6 @@ try:
         return answers["confirmation"]
 
     def get_tags_for_aor(aor_name):
-
         tasks = warrior.load_tasks()["pending"]
         aor_tasks = [
             task
@@ -2935,7 +2927,6 @@ try:
         return tag_counts
 
     def sync_with_taskwarrior(aors, projects, file_path):
-
         tasks = warrior.load_tasks()
 
         task_projects = set()
@@ -3016,7 +3007,7 @@ try:
     ]  # colors for tree branch levels for the functions underneath
 
     def basic_summary():
-        from rich import print
+        # from rich import print
         from rich.tree import Tree
         from rich.text import Text
         from rich.console import Console
@@ -3125,7 +3116,7 @@ try:
 
     def next_summary():
         # the modules are imported here because of an unidentified cause: the ascii codes are getting printed in the other functions instead of coloring the output when these modules are imported in the main.
-        from rich import print
+        # from rich import print
         from rich.tree import Tree
         from rich.text import Text
         from rich.console import Console
@@ -3234,7 +3225,7 @@ try:
 
     def detailed_summary():
         # the modules are imported here because of an unidentified cause: the ascii codes are getting printed in the other functions instead of coloring the output when these modules are imported in the main.
-        from rich import print
+        # from rich import print
         from rich.tree import Tree
         from rich.text import Text
         from rich.console import Console
@@ -3378,7 +3369,7 @@ try:
         console.print(tree)
 
     def all_summary():
-        from rich import print
+        # from rich import print
         from rich.tree import Tree
         from rich.text import Text
         from rich.console import Console
@@ -3654,17 +3645,17 @@ try:
                 due = pending
 
                 if completed:
-                    weekly_report[task_counter][
-                        date.strftime("%m-%d")
-                    ] = "[green]C[/green]"
+                    weekly_report[task_counter][date.strftime("%m-%d")] = (
+                        "[green]C[/green]"
+                    )
                     status_counter["C"] += 1
                 elif deleted:
                     weekly_report[task_counter][date.strftime("%m-%d")] = "[red]D[/red]"
                     status_counter["D"] += 1
                 elif due:
-                    weekly_report[task_counter][
-                        date.strftime("%m-%d")
-                    ] = "[red bold]P[/red bold]"
+                    weekly_report[task_counter][date.strftime("%m-%d")] = (
+                        "[red bold]P[/red bold]"
+                    )
                     status_counter["P"] += 1
                 else:
                     weekly_report[task_counter][date.strftime("%m-%d")] = "-"
@@ -3732,205 +3723,199 @@ try:
         else:
             return []
 
-    # from rich.console import Console
-    # from rich.panel import Panel
-    # from rich.table import Table
-    # from rich import box
-    # from rich.prompt import IntPrompt
 
-    def ask_questions(task_name="Task"):
-        """
-        Calculate task priority based on multiple factors and return normalized value.
 
-        Args:
-            task_name (str): Name of the task being evaluated
+    dimensions = {
+        "Importance": {
+            "question": "How important is this task to achieving your goals?",
+            "options": [
+                ("Critical to core goals/mission", 5),
+                ("Very important strategic objective", 4),
+                ("Supports important goals", 3),
+                ("Nice to have, but not essential", 2),
+                ("Minimal impact on goals", 1),
+                ("No relevance to goals", 0),
+            ],
+            "weight": 5,
+        },
+        "Urgency": {
+            "question": "How soon does this task need to be completed?",
+            "options": [
+                ("Must be done immediately/today", 5),
+                ("Needed this week", 4),
+                ("Needed this month", 3),
+                ("Needed this quarter", 2),
+                ("Needed this year", 1),
+                ("No time pressure", 0),
+            ],
+            "weight": 4,
+        },
+        "Consequences": {
+            "question": "What are the consequences if this task is not completed?",
+            "options": [
+                ("Severe negative impact if not done", 5),
+                ("Major problems will arise", 4),
+                ("Moderate issues will occur", 3),
+                ("Minor inconveniences", 2),
+                ("Very little impact", 1),
+                ("No consequences", 0),
+            ],
+            "weight": 4,
+        },
+        "Uncertainty": {
+            "question": "How clear are the requirements and expected outcomes?",
+            "options": [
+                ("Complete lack of clarity", 5),
+                ("Major unknowns present", 4),
+                ("Several unclear aspects", 3),
+                ("Minor uncertainties", 2),
+                ("Mostly clear path", 1),
+                ("Crystal clear requirements", 0),
+            ],
+            "weight": 2,
+        },
+        "Effort": {
+            "question": "How much effort (time/resources) will this task require?",
+            "options": [
+                ("Massive project (months)", 5),
+                ("Large project (weeks)", 4),
+                ("Medium project (days)", 3),
+                ("Small task (hours)", 2),
+                ("Quick task (< 1 hour)", 1),
+                ("Minimal effort (minutes)", 0),
+            ],
+            "weight": 3,
+        },
+    }
 
-        Returns:
-            float: Normalized priority value between 0-100
-        """
-        console = Console()
+    def display_options(dimension_name, dimension_data):
+        # Create a table with no header, simple box, and minimal styling
+        table = Table(
+            show_header=False,
+            box=box.SIMPLE,
+            show_edge=False,
+            pad_edge=False,
+            style="dim",
+            padding=(0, 2),  # Add padding for better spacing
+        )
 
-        # Dimension definitions with their questions and options
-        dimensions = {
-            "Importance": {
-                "question": "How important is this task to achieving your goals?",
-                "options": [
-                    ("Critical to core goals/mission", 5),
-                    ("Very important strategic objective", 4),
-                    ("Supports important goals", 3),
-                    ("Nice to have, but not essential", 2),
-                    ("Minimal impact on goals", 1),
-                    ("No relevance to goals", 0),
-                ],
-                "weight": 5,
-            },
-            "Urgency": {
-                "question": "How soon does this task need to be completed?",
-                "options": [
-                    ("Must be done immediately/today", 5),
-                    ("Needed this week", 4),
-                    ("Needed this month", 3),
-                    ("Needed this quarter", 2),
-                    ("Needed this year", 1),
-                    ("No time pressure", 0),
-                ],
-                "weight": 4,
-            },
-            "Consequences": {
-                "question": "What are the consequences if this task is not completed?",
-                "options": [
-                    ("Severe negative impact if not done", 5),
-                    ("Major problems will arise", 4),
-                    ("Moderate issues will occur", 3),
-                    ("Minor inconveniences", 2),
-                    ("Very little impact", 1),
-                    ("No consequences", 0),
-                ],
-                "weight": 4,
-            },
-            "Uncertainty": {
-                "question": "How clear are the requirements and expected outcomes?",
-                "options": [
-                    ("Complete lack of clarity", 5),
-                    ("Major unknowns present", 4),
-                    ("Several unclear aspects", 3),
-                    ("Minor uncertainties", 2),
-                    ("Mostly clear path", 1),
-                    ("Crystal clear requirements", 0),
-                ],
-                "weight": 2,
-            },
-            "Effort": {
-                "question": "How much effort (time/resources) will this task require?",
-                "options": [
-                    ("Massive project (months)", 5),
-                    ("Large project (weeks)", 4),
-                    ("Medium project (days)", 3),
-                    ("Small task (hours)", 2),
-                    ("Quick task (< 1 hour)", 1),
-                    ("Minimal effort (minutes)", 0),
-                ],
-                "weight": 3,
-            },
-        }
+        # Define a list of colors for the options
+        colors = ["red", "orange3", "yellow", "green", "blue", "purple"]
 
-        def display_options(dimension_name, dimension_data):
-            table = Table(
-                show_header=False,
-                box=box.SIMPLE,
-                show_edge=False,
-                pad_edge=False,
-                style="dim",
-            )
-            colors = ["red", "orange3", "yellow", "green", "blue", "purple"]
-
-            for (description, value), color in zip(dimension_data["options"], colors):
-                table.add_row(f"[bold {color}]{value}[/bold {color}]", "-", description)
-
-            return Panel(
-                table,
-                title=f"[bold]{dimension_name}[/bold]",
-                title_align="left",
-                subtitle=dimension_data["question"],
-                box=box.ROUNDED,
+        # Add rows to the table with colored values and descriptions
+        for (description, value), color in zip(dimension_data["options"], colors):
+            table.add_row(
+                f"[bold {color}]{value}[/bold {color}]",
+                "—",  # Use an em dash for a cleaner separator
+                description,
             )
 
-        def get_score(dimension_name, dimension_data):
-            console.print()
-            console.print(display_options(dimension_name, dimension_data))
-
-            while True:
-                try:
-                    value = IntPrompt.ask("[bold cyan]Enter rating[/bold cyan]")
-                    if 0 <= value <= 5:
-                        selected_description = next(
-                            desc
-                            for desc, val in dimension_data["options"]
-                            if val == value
-                        )
-                        console.print(f"[dim]Selected: {selected_description}[/dim]")
-                        return value
-                    console.print(
-                        "[bold red]Please enter a value between 0 and 5[/bold red]"
-                    )
-                except ValueError:
-                    console.print("[bold red]Please enter a valid number[/bold red]")
-
-        # Display header
-        console.print(
-            Panel(
-                "[bold cyan]Task Prioritization System[/bold cyan]\n"
-                "[dim]Evaluate your task across 5 key dimensions to determine its priority[/dim]",
-                box=box.ROUNDED,
-                style="blue",
-            )
+        # Create a panel with the table, adjusting the width to fit the content
+        return Panel(
+            table,
+            title=f"[bold]{dimension_name}[/bold]",
+            title_align="left",
+            subtitle=dimension_data["question"],
+            box=box.ROUNDED,
+            expand=False,  # Ensure the panel does not expand to terminal width
+            width=None,    # Let the panel adjust its width to the content
+            padding=(1, 2),  # Add padding around the panel content
+            style="dim",  # Apply a subtle style to the panel
         )
 
-        # Collect scores
-        scores = {}
-        for dimension_name, dimension_data in dimensions.items():
-            scores[dimension_name] = get_score(dimension_name, dimension_data)
-
-        # Calculate value
-        base_value = sum(
-            scores[dim] * data["weight"]
-            for dim, data in dimensions.items()
-            if dim in ["Importance", "Urgency", "Consequences"]
-        )
-
-        uncertainty_factor = 1 - (scores["Uncertainty"] * 0.1)
-        effort_factor = 1 + (scores["Effort"] * 0.5)
-
-        max_possible_value = sum(
-            5 * data["weight"]
-            for dim, data in dimensions.items()
-            if dim in ["Importance", "Urgency", "Consequences"]
-        )
-
-        final_value = base_value * uncertainty_factor / effort_factor
-        normalized_value = round((final_value / max_possible_value) * 100, 2)
-
-        # Display results
-        priority_level = (
-            "HIGH"
-            if normalized_value >= 70
-            else "MEDIUM" if normalized_value >= 40 else "LOW"
-        )
-        priority_color = (
-            "bold red"
-            if normalized_value >= 70
-            else "bold yellow" if normalized_value >= 40 else "bold blue"
-        )
-
-        result_table = Table(box=box.ROUNDED, show_header=False)
-        result_table.add_column("Metric", style="cyan")
-        result_table.add_column("Value", style="white")
-
-        for dimension_name, score in scores.items():
-            selected_description = next(
-                desc
-                for desc, val in dimensions[dimension_name]["options"]
-                if val == score
-            )
-            result_table.add_row(
-                dimension_name, f"[bold]{score}[/bold] - {selected_description}"
-            )
-
-        result_table.add_row("Final Score", f"[bold]{normalized_value}$$$[/bold]")
-        result_table.add_row(
-            "Priority Level", f"[{priority_color}]{priority_level}[/{priority_color}]"
-        )
-
+    def get_score(dimension_name, dimension_data):
         console.print()
-        console.print(
-            Panel(
-                result_table,
-                title=f"[bold cyan]Results for {task_name}[/bold cyan]",
-                box=box.ROUNDED,
-            )
+        console.print(display_options(dimension_name, dimension_data))
+
+        while True:
+            try:
+                value = IntPrompt.ask("[bold cyan]Enter rating (0-5)[/bold cyan]")
+                if 0 <= value <= 5:
+                    selected_description = next(
+                        desc
+                        for desc, val in dimension_data["options"]
+                        if val == value
+                    )
+                    console.print(f"[dim]Selected: {selected_description}[/dim]")
+                    return value
+                console.print(
+                    "[bold red]Please enter a value between 0 and 5[/bold red]"
+                )
+            except ValueError:
+                console.print("[bold red]Please enter a valid number[/bold red]")
+
+
+    def display_filter_options(filter_options):
+        """
+        Display the filter options in a formatted table using Rich.
+        """
+        table = Table(title="[bold cyan]Preset Filters[/bold cyan]", box=box.ROUNDED)
+        table.add_column("Number", style="cyan", justify="center")
+        table.add_column("Filter Name", style="green")
+        table.add_column("Filter Query", style="dim")
+
+        for key, (name, query) in filter_options.items():
+            table.add_row(key, name, query)
+
+        console.print(table)
+
+    def get_filter_choice(filter_options):
+        """
+        Prompt the user to select a filter or enter a custom one.
+        """
+        display_filter_options(filter_options)
+
+        filter_query = Prompt.ask(
+            "[bold cyan]Enter your Taskwarrior filter or select a number:[/bold cyan]",
+            choices=list(filter_options.keys()) + ["custom"],
+            default="custom",
         )
 
-        return normalized_value
+        if filter_query in filter_options:
+            selected_filter = filter_options[filter_query]
+            console.print(
+                f"[bold green]Using preset filter:[/bold green] [dim]{selected_filter[1]}[/dim]"
+            )
+            return selected_filter[1]
+        else:
+            custom_filter = Prompt.ask("[bold cyan]Enter your custom filter:[/bold cyan]")
+            console.print(f"[bold green]Using custom filter:[/bold green] [dim]{custom_filter}[/dim]")
+            return custom_filter
+
+    def get_fork_choice():
+        """
+        Prompt the user to choose between priority assessment, processing, or Eisenhower matrix.
+        Displays a description of each option.
+        """
+        # Create a table to display the options and their descriptions
+        table = Table(title="[bold cyan]Choose an Action[/bold cyan]", box=box.ROUNDED)
+        table.add_column("Option", style="cyan", justify="center")
+        table.add_column("Description", style="green")
+
+        # Add rows for each option
+        table.add_row(
+            "i",
+            "Assess priority: Evaluate the task's priority based on importance, urgency, and other factors.",
+        )
+        table.add_row(
+            "o",
+            "Process: Mark tasks as done, delete them, or skip them without assessing priority.",
+        )
+        table.add_row(
+            "e",
+            "Eisenhower Matrix: Categorize tasks into the Eisenhower Matrix (Urgent/Important, Not Urgent/Important, etc.).",
+        )
+
+        # Display the table
+        console.print(table)
+
+        # Prompt the user to choose an option
+        fork = Prompt.ask(
+            "[bold cyan]Choose an action (i/o/e):[/bold cyan]",
+            choices=["i", "o", "e"],
+            default="i",
+        )
+        return fork
 
     def eisenhower():
         try:
@@ -3941,82 +3926,203 @@ try:
                 "3": ("Due Tomorrow", "due:tomorrow"),
             }
 
-            print(
-                Fore.CYAN
-                + "You can enter your own Taskwarrior filter, or select a preset filter by entering its number:"
-            )
-            for key, (name, _) in filter_options.items():
-                print(f"{key}. {name}")
+            # Get the filter choice from the user
+            filter_query = get_filter_choice(filter_options)
 
-            filter_query = input(
-                Fore.CYAN + "Enter your Taskwarrior filter or select a number: "
-            )
-
-            if filter_query in filter_options:
-                filter_query = filter_options[filter_query][1]
-                print(Fore.GREEN + f"Using preset filter: {filter_query}")
-            else:
-                print(Fore.GREEN + f"Using custom filter: {filter_query}")
-
-            fork = input(
-                "Do you want to assess priority (i), process (o), or use the Eisenhower matrix (e) for the tasks?\n"
-                + Fore.RED
-            )
+            # Get the fork choice from the user
+            fork = get_fork_choice()
 
             if fork == "i":
                 tasks = get_tasks(filter_query)
+
 
                 for task in tasks:
                     print(delimiter)
                     display_task_details(task["uuid"])
                     print(Fore.CYAN + f"\nProcessing task: {task['description']}")
 
-                    # --- Check value ---
+                    # Ask the user what action to take for this task
                     if task.get("value", 0) > 0:
                         print(
                             Fore.YELLOW
-                            + f"Task has a value of {task['value']}. Do you still want to process this task? (y/n)"
+                            + f"Task has already a value of {task['value']}."
                         )
-                        user_input = input(">> ").strip().lower()
-                        if user_input != "y":
-                            # If the user did not confirm 'yes', skip this task
-                            print(Fore.BLUE + "Skipping this task due to its value.")
-                            continue
-                    # -------------------
-
-                    # Ask user how to handle the task
-                    response = ask_questions()
-
-                    if response in ["skip", "done", "del"]:
-                        if response == "skip":
-                            print(Fore.BLUE + "Skipping task.")
-                        elif response == "done":
-                            run_taskwarrior_command(f"task {task['uuid']} done")
-                            print(Fore.GREEN + "Marked task as done.")
-                        elif response == "del":
-                            run_taskwarrior_command(f"task {task['uuid']} delete -y")
-                            print(Fore.GREEN + f"Deleted task {task['uuid']}")
-                        continue
-
-                    value = response
-                    if value >= 70:
-                        priority = "H"  # High Priority
-                    elif value >= 40:
-                        priority = "M"  # Medium Priority
-                    else:
-                        priority = "L"  # Low Priority
-
-                    # Update task with value and priority
-                    update_command = f"task {task['uuid']} modify value:{value:.2f} priority:{priority}"
-                    run_taskwarrior_command(update_command)
-                    print(
-                        Fore.GREEN
-                        + f"Updated task with value: {value:.2f} and priority: {priority}"
+                    action = Prompt.ask(
+                        "[bold cyan]Choose an action:[/bold cyan]",
+                        choices=["rate", "done", "delete", "skip"],
+                        default="rate",
                     )
 
+                    if action == "done":
+                        run_taskwarrior_command(f"task {task['uuid']} done")
+                        console.print("[bold green]Task marked as done.[/bold green]")
+                        continue  # Move to the next task
+                    elif action == "delete":
+                        run_taskwarrior_command(f"task {task['uuid']} delete -y")
+                        console.print("[bold green]Task deleted.[/bold green]")
+                        continue  # Move to the next task
+                    elif action == "skip":
+                        console.print("[bold blue]Skipping task.[/bold blue]")
+                        continue  # Move to the next task
+                    elif action == "rate":
+                        # Collect scores for each dimension
+                        scores = {}
+                        for dimension_name, dimension_data in dimensions.items():
+                            # Prompt the user to rate the task for the current dimension
+                            score = get_score(dimension_name, dimension_data)
+                            # Store the score in the scores dictionary
+                            scores[dimension_name] = score
+
+                        # Calculate the base value of the task
+                        # The base value is the weighted sum of scores for the dimensions:
+                        # Importance, Urgency, and Consequences.
+                        base_value = sum(
+                            scores[dim] * data["weight"]  # Multiply the score by the dimension's weight
+                            for dim, data in dimensions.items()
+                            if dim in ["Importance", "Urgency", "Consequences"]  # Only include these dimensions
+                        )
+
+                        # Calculate the uncertainty factor
+                        # Uncertainty reduces the base value. Higher uncertainty means a lower factor.
+                        # For example, if the Uncertainty score is 5, the factor is 1 - (5 * 0.1) = 0.5.
+                        uncertainty_factor = 1 - (scores["Uncertainty"] * 0.1)
+
+                        # Calculate the effort factor
+                        # Effort increases the base value. Higher effort means a higher factor.
+                        # For example, if the Effort score is 5, the factor is 1 + (5 * 0.5) = 3.5.
+                        effort_factor = 1 + (scores["Effort"] * 0.5)
+
+                        # Calculate the maximum possible value
+                        # This is the sum of the maximum scores (5) for Importance, Urgency, and Consequences,
+                        # each multiplied by their respective weights.
+                        max_possible_value = sum(
+                            5 * data["weight"]  # Maximum score (5) multiplied by the dimension's weight
+                            for dim, data in dimensions.items()
+                            if dim in ["Importance", "Urgency", "Consequences"]  # Only include these dimensions
+                        )
+
+                        # Calculate the final value
+                        # The final value is the base value adjusted by the uncertainty and effort factors.
+                        # Higher uncertainty reduces the value, while higher effort increases it.
+                        final_value = base_value * uncertainty_factor / effort_factor
+
+                        # Normalize the final value to a percentage (0-100)
+                        # This makes it easier to compare tasks and determine priority.
+                        normalized_value = round((final_value / max_possible_value) * 100, 2)
+
+
+                        # ### Example Calculation:
+
+                        # Let’s assume the following scores and weights:
+
+                        # |Dimension|   Score|Weight|
+                        #               |--- |---   |
+                        # |Importance   |4   |     5|
+                        # |Urgency      |3   |     4|
+                        # |Consequences |5   |     4|
+                        # |Uncertainty  |2   |     2|
+                        # |Effort       |3   |     3|
+
+                        # 1. **Base Value**:
+                            
+                        #     - Importance: 4×5=20
+                                
+                        #     - Urgency: 3×4=12
+                                
+                        #     - Consequences: 5×4=20
+                                
+                        #     - **Base Value**: 20+12+20=52
+                                
+                        # 2. **Uncertainty Factor**:
+                            
+                        #     - 1−(2×0.1)=0.8
+                                
+                        # 3. **Effort Factor**:
+                            
+                        #     - 1+(3×0.5)=2.5
+                                
+                        # 4. **Final Value**:
+                            
+                        #     - 52×0.8/2.5=16.64
+                                
+                        # 5. **Max Possible Value**:
+                            
+                        #     - Importance: 5×5=25
+                                
+                        #     - Urgency: 5×4=20
+                                
+                        #     - Consequences: 5×4=20
+                                
+                        #     - **Max Possible Value**: 25+20+20=65
+                                
+                        # 6. **Normalized Value**:
+                            
+                        #     - (16.64/65)×100=25.6
+
+                        
+                      # Determine priority level
+                        priority_level = (
+                            "HIGH"
+                            if normalized_value >= 70
+                            else "MEDIUM"
+                            if normalized_value >= 40
+                            else "LOW"
+                        )
+                        priority_color = (
+                            "bold red"
+                            if normalized_value >= 70
+                            else "bold yellow"
+                            if normalized_value >= 40
+                            else "bold blue"
+                        )
+
+                        # Display results
+                        result_table = Table(box=box.ROUNDED, show_header=False)
+                        result_table.add_column("Metric", style="cyan")
+                        result_table.add_column("Value", style="white")
+
+                        for dimension_name, score in scores.items():
+                            selected_description = next(
+                                desc
+                                for desc, val in dimensions[dimension_name]["options"]
+                                if val == score
+                            )
+                            result_table.add_row(
+                                dimension_name, f"[bold]{score}[/bold] - {selected_description}"
+                            )
+
+                        result_table.add_row("Final Score", f"[bold]{normalized_value}[/bold]")
+                        result_table.add_row(
+                            "Priority Level", f"[{priority_color}]{priority_level}[/{priority_color}]"
+                        )
+
+                        console.print()
+                        console.print(
+                            Panel(
+                                result_table,
+                                title=f"[bold cyan]Results for {task['description']}[/bold cyan]",
+                                box=box.ROUNDED,
+                            )
+                        )
+
+                        # Update task with value and priority
+                        if normalized_value >= 70:
+                            priority = "H"  # High Priority
+                        elif normalized_value >= 40:
+                            priority = "M"  # Medium Priority
+                        else:
+                            priority = "L"  # Low Priority
+
+                        update_command = f"task {task['uuid']} modify value:{normalized_value:.2f} priority:{priority}"
+                        run_taskwarrior_command(update_command)
+                        console.print(
+                            f"[bold green]Updated task with value: {normalized_value:.2f} and priority: {priority}[/bold green]"
+                        )
+
             elif fork == "o":
-                tasks = get_inbox_tasks(filter_query)
+                tasks = get_tasks(filter_query)
                 for task in tasks:
+                    
                     process_task(task)
             elif fork == "e":
                 tasks = get_tasks(filter_query)
@@ -4149,13 +4255,13 @@ try:
             text = parts[0]
 
             if level % spaces_per_level != 0:
-                raise ValueError(f"Invalid indentation level in input on line {i+5}")
+                raise ValueError(f"Invalid indentation level in input on line {i + 5}")
 
             level //= spaces_per_level
 
             if level > last_level + 1:
                 raise ValueError(
-                    f"Indentation level increased by more than 1 on line {i+5}"
+                    f"Indentation level increased by more than 1 on line {i + 5}"
                 )
 
             level_text[level] = text
@@ -4509,37 +4615,88 @@ try:
             return item_name  # Use the new name entered by the user
 
     def display_task_details(task_uuid):
-        """Display a task's details in a Rich-styled table."""
-        # Create a Rich Console instance
+        """Display a task's details in a Rich-styled tree structure."""
         console = Console()
 
         # Retrieve the task details from Taskwarrior
         command = f"task {task_uuid} export"
         output = run_taskwarrior_command(command)
 
-        if output:
-            task_details = json.loads(output)
-            if task_details:
-                # Get the first task (assuming single task is returned)
-                task = task_details[0]
-
-                # Create a table with a title
-                table = Table(title=f"Task Details for {task_uuid}", show_lines=True)
-
-                # Add two columns to our table
-                table.add_column("Field", style="bold cyan", justify="left")
-                table.add_column("Value", style="bold white", justify="left")
-
-                # Populate the rows with key-value pairs from the task
-                for key, value in task.items():
-                    table.add_row(str(key), str(value))
-
-                # Print the table to the console
-                console.print(table)
-            else:
-                console.print("[red]No task details found.[/red]")
-        else:
+        if not output:
             console.print("[red]Failed to retrieve task details.[/red]")
+            return
+
+        task_details = json.loads(output)
+        if not task_details:
+            console.print("[red]No task details found.[/red]")
+            return
+
+        task = task_details[0]
+        
+        # Create the main tree
+        main_tree = Tree(
+            Text(f"Task {task_uuid}", style="bold cyan"),
+            guide_style="cyan"
+        )
+
+        # Helper function to format values appropriately
+        def format_value(value):
+            if isinstance(value, bool):
+                return "✓" if value else "✗"
+            elif isinstance(value, (int, float)):
+                return str(value)
+            elif isinstance(value, dict):
+                return "nested dictionary"  # Placeholder for nested structures
+            elif isinstance(value, list):
+                return ", ".join(map(str, value))
+            elif value is None:
+                return "—"
+            return str(value)
+
+        # Group related fields
+        field_groups = {
+            "Basic Information": ["description", "status", "project", "priority"],
+            "Dates": ["entry", "modified", "due", "scheduled", "until"],
+            "Tags and Dependencies": ["tags", "depends"],
+            "Task Status": ["waiting", "recur", "parent"],
+            "Metadata": ["uuid", "urgency", "modified", "id"]
+        }
+
+        # Create branches for each group
+        for group_name, fields in field_groups.items():
+            # Only create group if at least one field exists
+            existing_fields = [f for f in fields if f in task]
+            if existing_fields:
+                group_branch = main_tree.add(Text(group_name, style="bold yellow"))
+                
+                for field in existing_fields:
+                    value = format_value(task[field])
+                    # Style based on field type
+                    if field in ["due", "scheduled"] and task.get(field):
+                        style = "red" if field == "due" else "green"
+                    elif field == "priority":
+                        style = {"H": "red", "M": "yellow", "L": "blue"}.get(value, "white")
+                    else:
+                        style = "white"
+                    
+                    field_text = Text(f"{field}: ", style="blue")
+                    field_text.append(value, style=style)
+                    group_branch.add(field_text)
+
+        # Add remaining fields that weren't in any group
+        all_grouped_fields = [f for fields in field_groups.values() for f in fields]
+        remaining_fields = [f for f in task.keys() if f not in all_grouped_fields]
+        
+        if remaining_fields:
+            other_branch = main_tree.add(Text("Other Fields", style="bold yellow"))
+            for field in remaining_fields:
+                value = format_value(task[field])
+                field_text = Text(f"{field}: ", style="blue")
+                field_text.append(value, style="white")
+                other_branch.add(field_text)
+
+        # Print the tree
+        console.print(main_tree)
 
     def add_new_task_to_project(project_name):
         while True:
@@ -4556,6 +4713,7 @@ try:
 
     def process_task(task):
         print(Fore.YELLOW + f"\nProcessing task: {task['description']}")
+        display_task_details(task["uuid"])
         action = (
             input("Choose action: modify (mod) /skip (s) /delete (del) /done (d)):\n ")
             .strip()
@@ -4564,7 +4722,7 @@ try:
 
         if action == "mod":
             print(Fore.YELLOW + "Task details:")
-            display_task_details(task["uuid"])
+        
             mod_confirm = (
                 input("Do you want to modify this task? (yes/no):\n ").strip().lower()
             )
@@ -4996,7 +5154,6 @@ try:
                 )
 
     def display_menu(console):
-
         # console = Console()
         table = Table(show_header=True, header_style="bold yellow")
         table.add_column("Key", style="dim", width=2)
@@ -5850,7 +6007,6 @@ try:
     # from rich import box
 
     def task_organizer():
-
         from datetime import time
 
         def get_tasks_for_day(date):
